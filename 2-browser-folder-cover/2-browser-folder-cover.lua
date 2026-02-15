@@ -291,7 +291,8 @@ local function patchCoverBrowser(plugin)
         end
 
         local nbitems_widget
-        if tonumber(nbitems.text) ~= 0 then
+        local nb_count = tonumber(nbitems.text)
+        if nb_count and nb_count ~= 0 then
             nbitems_widget = BottomContainer:new {
                 dimen = dimen,
                 RightContainer:new {
