@@ -115,7 +115,12 @@ end
 local function capitalize(sentence)
     local words = {}
     for word in sentence:gmatch("%S+") do
-        table.insert(words, word:sub(1, 1):upper() .. word:sub(2):lower())
+        local first_byte = word:byte(1)
+        if first_byte and first_byte < 0x80 then
+            table.insert(words, word:sub(1, 1):upper() .. word:sub(2):lower())
+        else
+            table.insert(words, word)
+        end
     end
     return table.concat(words, " ")
 end
