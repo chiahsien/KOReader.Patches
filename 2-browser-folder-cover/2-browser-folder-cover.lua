@@ -107,15 +107,6 @@ function FileChooser:getListItem(dirpath, f, fullpath, attributes, collate)
     return dir_cache[key]
 end
 
--- local orig_FileChooser_genItemTableFromPath = FileChooser.genItemTableFromPath
-
--- function FileChooser:genItemTableFromPath(path)
---     local start = os.clock()
---     local item_table = orig_FileChooser_genItemTableFromPath(self, path)
---     logger.info("!! !!! !!  GEN", path, (os.clock() - start) * 1000)
---     return item_table
--- end
-
 local function capitalize(sentence)
     local words = {}
     for word in sentence:gmatch("%S+") do
