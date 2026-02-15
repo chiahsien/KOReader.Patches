@@ -174,6 +174,8 @@ local function patchCoverBrowser(plugin)
         return self
     end
 
+    local settings_version = 0
+
     local settings = {
         crop_to_fit = BooleanSetting(_("Crop folder custom image"), "folder_crop_custom_image", true),
         name_centered = BooleanSetting(_("Folder name centered"), "folder_name_centered", true),
@@ -183,13 +185,14 @@ local function patchCoverBrowser(plugin)
     -- cover item
     function MosaicMenuItem:update(...)
         original_update(self, ...)
-        if self._foldercover_processed or self.menu.no_refresh_covers or not self.do_cover_image then return end
+        if self.menu.no_refresh_covers or not self.do_cover_image then return end
+        if self._foldercover_version == settings_version then return end
 
         if self.entry.is_file or self.entry.file or not self.mandatory then return end -- it's a file
         local dir_path = self.entry and self.entry.path
         if not dir_path then return end
 
-        self._foldercover_processed = true
+        self._foldercover_version = settings_version
 
         local cover_file = findCover(dir_path) --custom
         if cover_file then
@@ -417,6 +420,8 @@ local function patchCoverBrowser(plugin)
                         checked_func = function() return setting.get() end,
                         callback = function()
                             setting.toggle()
+                            settings_version = settings_version + 1
+                            cached_list = {}
                             self.ui.file_chooser:updateItems()
                         end,
                     })
