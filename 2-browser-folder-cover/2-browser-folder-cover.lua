@@ -370,11 +370,17 @@ local function patchCoverBrowser(plugin)
             if directory:getSize().h <= available_height then break end
             dir_font_size = dir_font_size - 1
             if dir_font_size < 10 then -- don't go too low
-                directory:free()
-                directory.height = available_height
-                directory.height_adjust = true
-                directory.height_overflow_show_ellipsis = true
-                directory:init()
+                directory:free(true)
+                directory = TextBoxWidget:new {
+                    text = text,
+                    face = Font:getFace("cfont", 10),
+                    width = dimen.w,
+                    alignment = "center",
+                    bold = true,
+                    height = available_height,
+                    height_adjust = true,
+                    height_overflow_show_ellipsis = true,
+                }
                 break
             end
         end
