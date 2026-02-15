@@ -205,20 +205,19 @@ local function patchCoverBrowser(plugin)
         local dir_path = self.entry and self.entry.path
         if not dir_path then return end
 
-        self._foldercover_version = settings_version
-
         local cover_file = findCover(dir_path) --custom
         if cover_file then
             local success, w, h = pcall(function()
                 local tmp_img = ImageWidget:new { file = cover_file, scale_factor = 1 }
                 tmp_img:_render()
-                local orig_w = tmp_img: getOriginalWidth()
+                local orig_w = tmp_img:getOriginalWidth()
                 local orig_h = tmp_img:getOriginalHeight()
                 tmp_img:free()
                 return orig_w, orig_h
             end)
             if success then
-                self: _setFolderCover { file = cover_file, w = w, h = h, scale_to_fit = settings.crop_to_fit.get() }
+                self:_setFolderCover { file = cover_file, w = w, h = h, scale_to_fit = settings.crop_to_fit.get() }
+                self._foldercover_version = settings_version
                 return
             end
         end
@@ -231,6 +230,7 @@ local function patchCoverBrowser(plugin)
                and not bookinfo.ignore_cover
                and not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs) then
                 self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
+                self._foldercover_version = settings_version
                 return
             end
             cover_source_cache[dir_path] = nil
@@ -242,6 +242,7 @@ local function patchCoverBrowser(plugin)
         if not ok or not entries then return end
 
         local found_book = false
+        local has_pending_covers = false
         for _, entry in ipairs(entries) do
             if entry.is_file or entry.file then
                 local bookinfo = BookInfoManager:getBookInfo(entry.path, true)
@@ -257,6 +258,8 @@ local function patchCoverBrowser(plugin)
                     cover_source_cache[dir_path] = entry.path
                     found_book = true
                     break
+                elseif not bookinfo or not bookinfo.cover_fetched then
+                    has_pending_covers = true
                 end
             end
         end
@@ -275,6 +278,15 @@ local function patchCoverBrowser(plugin)
                     end
                 end
             end
+        end
+
+        if found_book then
+            self._foldercover_version = settings_version
+        elseif has_pending_covers and self.menu.items_to_update then
+            self.bookinfo_found = false
+            table.insert(self.menu.items_to_update, self)
+        else
+            self._foldercover_version = settings_version
         end
     end
 
