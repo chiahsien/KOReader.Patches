@@ -45,7 +45,11 @@ local function getMenuItem(menu, ...) -- path
         -- stylua: ignore
         for _, text in ipairs(texts) do find[text] = true end
         for _, item in ipairs(sub_items) do
-            local text = item.text or (item.text_func and item.text_func())
+            local text = item.text
+            if not text and item.text_func then
+                local ok, result = pcall(item.text_func)
+                text = ok and result or nil
+            end
             if text and find[text] then return item end
         end
     end
