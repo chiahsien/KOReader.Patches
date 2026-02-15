@@ -296,6 +296,8 @@ local function patchCoverBrowser(plugin)
     end
 
     function MosaicMenuItem:_setFolderCover(img)
+        if not img.w or not img.h or img.w <= 0 or img.h <= 0 then return end
+
         local top_h = 2 * (Folder.edge.thick + Folder.edge.margin)
         local target = {
             w = self.width - 2 * Folder.face.border_size,
