@@ -85,6 +85,7 @@ local orig_FileChooser_getListItem = FileChooser.getListItem
 local cached_list = {}       -- cached_list[dirpath][key] = widget
 local cached_list_order = {} -- LRU order of dirpaths, most recent last
 local cached_list_max = 10   -- max number of directories to keep in cache
+local cover_source_cache = {} -- dir_path → book_path that provides the cover
 
 function FileChooser:getListItem(dirpath, f, fullpath, attributes, collate)
     if not cached_list[dirpath] then
@@ -222,12 +223,24 @@ local function patchCoverBrowser(plugin)
             end
         end
 
+        -- check cover source cache: skip expensive directory scan on hit
+        local cached_book_path = cover_source_cache[dir_path]
+        if cached_book_path then
+            local bookinfo = BookInfoManager:getBookInfo(cached_book_path, true)
+            if bookinfo and bookinfo.cover_bb and bookinfo.has_cover and bookinfo.cover_fetched
+               and not bookinfo.ignore_cover
+               and not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs) then
+                self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
+                return
+            end
+            cover_source_cache[dir_path] = nil
+        end
+
         self.menu._dummy = true
         local ok, entries = pcall(self.menu.genItemTableFromPath, self.menu, dir_path)
         self.menu._dummy = false
         if not ok or not entries then return end
 
-        -- 改進：先在當前目錄尋找書籍
         local found_book = false
         for _, entry in ipairs(entries) do
             if entry.is_file or entry.file then
@@ -240,21 +253,22 @@ local function patchCoverBrowser(plugin)
                     and not bookinfo.ignore_cover
                     and not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs)
                 then
-                    self: _setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
+                    self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
+                    cover_source_cache[dir_path] = entry.path
                     found_book = true
                     break
                 end
             end
         end
 
-        -- 如果當前目錄沒找到書籍，遞迴搜尋子資料夾
         if not found_book then
             for _, entry in ipairs(entries) do
-                if not (entry.is_file or entry.file) then  -- 是資料夾
+                if not (entry.is_file or entry.file) then
                     local book_entry, bookinfo = findBookInSubfolders(self.menu, entry.path, 3)
                     if book_entry and bookinfo then
                         if not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs) then
                             self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
+                            cover_source_cache[dir_path] = book_entry.path
                             found_book = true
                             break
                         end
@@ -435,6 +449,7 @@ local function patchCoverBrowser(plugin)
                             settings_version = settings_version + 1
                             cached_list = {}
                             cached_list_order = {}
+                            cover_source_cache = {}
                             self.ui.file_chooser:updateItems()
                         end,
                     })
