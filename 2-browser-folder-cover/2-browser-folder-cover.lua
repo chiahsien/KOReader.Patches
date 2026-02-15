@@ -62,18 +62,23 @@ end
 
 local function toKey(...)
     local keys = {}
-    for _, key in pairs { ... } do
+    for _, key in ipairs { ... } do
         if type(key) == "table" then
-            table.insert(keys, "table")
-            for k, v in pairs(key) do
-                table.insert(keys, tostring(k))
-                table.insert(keys, tostring(v))
+            local sorted_keys = {}
+            for k in pairs(key) do
+                table.insert(sorted_keys, k)
             end
+            table.sort(sorted_keys, function(a, b) return tostring(a) < tostring(b) end)
+            table.insert(keys, "{")
+            for _, k in ipairs(sorted_keys) do
+                table.insert(keys, tostring(k) .. "=" .. tostring(key[k]))
+            end
+            table.insert(keys, "}")
         else
             table.insert(keys, tostring(key))
         end
     end
-    return table.concat(keys, "")
+    return table.concat(keys, "\0")
 end
 
 local orig_FileChooser_getListItem = FileChooser.getListItem
