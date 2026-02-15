@@ -339,6 +339,7 @@ local function patchCoverBrowser(plugin)
                 overlap_align = "center",
             }
         else
+            directory:free()
             folder_name_widget = VerticalSpan:new { width = 0 }
         end
 
@@ -363,6 +364,7 @@ local function patchCoverBrowser(plugin)
                 overlap_align = "center",
             }
         else
+            nbitems:free()
             nbitems_widget = VerticalSpan:new { width = 0 }
         end
 
