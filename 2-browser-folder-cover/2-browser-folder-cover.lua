@@ -217,6 +217,7 @@ local function patchCoverBrowser(plugin)
             if success then
                 self:_setFolderCover { file = cover_file, w = w, h = h, scale_to_fit = settings.crop_to_fit.get() }
                 self._foldercover_version = settings_version
+                self.bookinfo_found = true
                 return
             end
         end
@@ -230,6 +231,7 @@ local function patchCoverBrowser(plugin)
                and not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs) then
                 self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
                 self._foldercover_version = settings_version
+                self.bookinfo_found = true
                 return
             end
             cover_source_cache[dir_path] = nil
@@ -281,6 +283,7 @@ local function patchCoverBrowser(plugin)
 
         if found_book then
             self._foldercover_version = settings_version
+            self.bookinfo_found = true
         elseif has_pending_covers and self.menu.items_to_update then
             self.bookinfo_found = false
             table.insert(self.menu.items_to_update, self)
