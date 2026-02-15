@@ -200,8 +200,9 @@ local function patchCoverBrowser(plugin)
         if self.menu.no_refresh_covers or not self.do_cover_image then return end
         if self._foldercover_version == settings_version then return end
 
+        if not self.entry then return end
         if self.entry.is_file or self.entry.file or not self.mandatory then return end -- it's a file
-        local dir_path = self.entry and self.entry.path
+        local dir_path = self.entry.path
         if not dir_path then return end
 
         local cover_file = findCover(dir_path) --custom
