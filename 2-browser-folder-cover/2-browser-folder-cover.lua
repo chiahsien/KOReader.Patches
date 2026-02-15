@@ -82,12 +82,24 @@ local function toKey(...)
 end
 
 local orig_FileChooser_getListItem = FileChooser.getListItem
-local cached_list = {}
+local cached_list = {}       -- cached_list[dirpath][key] = widget
+local cached_list_order = {} -- LRU order of dirpaths, most recent last
+local cached_list_max = 10   -- max number of directories to keep in cache
 
-function FileChooser: getListItem(dirpath, f, fullpath, attributes, collate)
+function FileChooser:getListItem(dirpath, f, fullpath, attributes, collate)
+    if not cached_list[dirpath] then
+        cached_list[dirpath] = {}
+        table.insert(cached_list_order, dirpath)
+        -- evict oldest directory if over limit
+        while #cached_list_order > cached_list_max do
+            local oldest = table.remove(cached_list_order, 1)
+            cached_list[oldest] = nil
+        end
+    end
     local key = toKey(dirpath, f, fullpath, attributes, collate, self.show_filter.status)
-    cached_list[key] = cached_list[key] or orig_FileChooser_getListItem(self, dirpath, f, fullpath, attributes, collate)
-    return cached_list[key]
+    local dir_cache = cached_list[dirpath]
+    dir_cache[key] = dir_cache[key] or orig_FileChooser_getListItem(self, dirpath, f, fullpath, attributes, collate)
+    return dir_cache[key]
 end
 
 -- local orig_FileChooser_genItemTableFromPath = FileChooser.genItemTableFromPath
@@ -422,6 +434,7 @@ local function patchCoverBrowser(plugin)
                             setting.toggle()
                             settings_version = settings_version + 1
                             cached_list = {}
+                            cached_list_order = {}
                             self.ui.file_chooser:updateItems()
                         end,
                     })
