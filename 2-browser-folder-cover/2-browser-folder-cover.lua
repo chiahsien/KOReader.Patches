@@ -39,7 +39,7 @@ end
 local function getMenuItem(menu, ...) -- path
     local function findItem(sub_items, texts)
         local find = {}
-        local texts = type(texts) == "table" and texts or { texts }
+        texts = type(texts) == "table" and texts or { texts }
         -- stylua: ignore
         for _, text in ipairs(texts) do find[text] = true end
         for _, item in ipairs(sub_items) do
