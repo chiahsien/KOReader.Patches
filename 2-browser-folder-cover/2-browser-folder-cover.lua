@@ -36,7 +36,7 @@ local function findCover(dir_path)
     end
 end
 
-local function getMenuItem(menu, ...) -- path
+local function getMenuItem(menu, ...) -- menu text labels to walk
     local function findItem(sub_items, texts)
         local find = {}
         texts = type(texts) == "table" and texts or { texts }
@@ -135,9 +135,9 @@ local Folder = {
     },
 }
 
--- 新增：遞迴搜尋子資料夾中的書籍
+-- Recursively search subfolders for a book with a valid cover
 local function findBookInSubfolders(menu, dir_path, max_depth, BookInfoManager)
-    max_depth = max_depth or 3  -- 限制搜尋深度，避免無限遞迴
+    max_depth = max_depth or 3  -- limit search depth to avoid infinite recursion
     if max_depth <= 0 then return nil end
 
     menu._dummy = true
@@ -145,7 +145,7 @@ local function findBookInSubfolders(menu, dir_path, max_depth, BookInfoManager)
     menu._dummy = false
     if not ok or not entries then return nil end
 
-    -- 先在當前目錄尋找書籍
+    -- Search for books in the current directory first
     for _, entry in ipairs(entries) do
         if entry.is_file or entry.file then
             local bookinfo = BookInfoManager:getBookInfo(entry.path, true)
@@ -156,9 +156,9 @@ local function findBookInSubfolders(menu, dir_path, max_depth, BookInfoManager)
         end
     end
 
-    -- 如果當前目錄沒找到，遞迴搜尋子資料夾
+    -- No book found in current directory, recurse into subfolders
     for _, entry in ipairs(entries) do
-        if not (entry.is_file or entry.file) then  -- 是資料夾
+        if not (entry.is_file or entry.file) then
             local book_entry, bookinfo = findBookInSubfolders(menu, entry.path, max_depth - 1, BookInfoManager)
             if book_entry then return book_entry, bookinfo end
         end
@@ -180,7 +180,7 @@ local function patchCoverBrowser(plugin)
         local self = { text = text }
         self.get = function()
             local setting = BookInfoManager:getSetting(name)
-            if default then return not setting end -- false is stored as nil, so we need or own logic for boolean default
+            if default then return not setting end -- false is stored as nil, so we need our own logic for boolean default
             return setting
         end
         self.toggle = function() return BookInfoManager:toggleSetting(name) end
@@ -205,7 +205,7 @@ local function patchCoverBrowser(plugin)
         local dir_path = self.entry.path
         if not dir_path then return end
 
-        local cover_file = findCover(dir_path) --custom
+        local cover_file = findCover(dir_path) -- custom .cover file
         if cover_file then
             local tmp_img = ImageWidget:new { file = cover_file, scale_factor = 1 }
             local success, w, h = pcall(function()
