@@ -388,12 +388,14 @@ local function patchCoverBrowser(plugin)
                 },
             },
         }
-        if self._underline_container[1] then
+        if self._underline_container and self._underline_container[1] then
             local previous_widget = self._underline_container[1]
             previous_widget:free()
         end
 
-        self._underline_container[1] = widget
+        if self._underline_container then
+            self._underline_container[1] = widget
+        end
     end
 
     function MosaicMenuItem:_getTextBoxes(dimen)
