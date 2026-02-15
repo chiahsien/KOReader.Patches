@@ -141,9 +141,9 @@ local function findBookInSubfolders(menu, dir_path, max_depth)
     if max_depth <= 0 then return nil end
 
     menu._dummy = true
-    local entries = menu:genItemTableFromPath(dir_path)
+    local ok, entries = pcall(menu.genItemTableFromPath, menu, dir_path)
     menu._dummy = false
-    if not entries then return nil end
+    if not ok or not entries then return nil end
 
     -- 先在當前目錄尋找書籍
     for _, entry in ipairs(entries) do
@@ -223,9 +223,9 @@ local function patchCoverBrowser(plugin)
         end
 
         self.menu._dummy = true
-        local entries = self.menu:genItemTableFromPath(dir_path) -- sorted
+        local ok, entries = pcall(self.menu.genItemTableFromPath, self.menu, dir_path)
         self.menu._dummy = false
-        if not entries then return end
+        if not ok or not entries then return end
 
         -- 改進：先在當前目錄尋找書籍
         local found_book = false
