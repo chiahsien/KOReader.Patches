@@ -97,6 +97,7 @@ function FileChooser:getListItem(dirpath, f, fullpath, attributes, collate)
         while #cached_list_order > cached_list_max do
             local oldest = table.remove(cached_list_order, 1)
             cached_list[oldest] = nil
+            cover_source_cache[oldest] = nil
         end
     end
     local key = toKey(dirpath, f, fullpath, attributes, collate, self.show_filter.status)
