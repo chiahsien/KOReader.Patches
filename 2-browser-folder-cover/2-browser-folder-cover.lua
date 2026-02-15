@@ -284,9 +284,13 @@ local function patchCoverBrowser(plugin)
         if found_book then
             self._foldercover_version = settings_version
             self.bookinfo_found = true
+            self._foldercover_queued = false
         elseif has_pending_covers and self.menu.items_to_update then
-            self.bookinfo_found = false
-            table.insert(self.menu.items_to_update, self)
+            if not self._foldercover_queued then
+                self.bookinfo_found = false
+                self._foldercover_queued = true
+                table.insert(self.menu.items_to_update, self)
+            end
         else
             self._foldercover_version = settings_version
         end
