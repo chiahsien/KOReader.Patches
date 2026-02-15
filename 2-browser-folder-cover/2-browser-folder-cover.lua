@@ -178,6 +178,7 @@ local function patchCoverBrowser(plugin)
     local MosaicMenuItem = userpatch.getUpValue(MosaicMenu._updateItemsBuildUI, "MosaicMenuItem")
     if not MosaicMenuItem then return end -- Protect against remnants of project title
     local BookInfoManager = userpatch.getUpValue(MosaicMenuItem.update, "BookInfoManager")
+    if not BookInfoManager then return end
     local original_update = MosaicMenuItem.update
 
     -- setting
