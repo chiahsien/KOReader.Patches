@@ -158,8 +158,8 @@ local function patchCoverBrowser(plugin)
     local original_update = MosaicMenuItem.update
 
     -- setting
-    function BooleanSetting(text, name, default)
-        self = { text = text }
+    local function BooleanSetting(text, name, default)
+        local self = { text = text }
         self.get = function()
             local setting = BookInfoManager:getSetting(name)
             if default then return not setting end -- false is stored as nil, so we need or own logic for boolean default
