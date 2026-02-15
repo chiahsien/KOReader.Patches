@@ -206,14 +206,12 @@ local function patchCoverBrowser(plugin)
 
         local cover_file = findCover(dir_path) --custom
         if cover_file then
+            local tmp_img = ImageWidget:new { file = cover_file, scale_factor = 1 }
             local success, w, h = pcall(function()
-                local tmp_img = ImageWidget:new { file = cover_file, scale_factor = 1 }
                 tmp_img:_render()
-                local orig_w = tmp_img:getOriginalWidth()
-                local orig_h = tmp_img:getOriginalHeight()
-                tmp_img:free()
-                return orig_w, orig_h
+                return tmp_img:getOriginalWidth(), tmp_img:getOriginalHeight()
             end)
+            tmp_img:free()
             if success then
                 self:_setFolderCover { file = cover_file, w = w, h = h, scale_to_fit = settings.crop_to_fit.get() }
                 self._foldercover_version = settings_version
