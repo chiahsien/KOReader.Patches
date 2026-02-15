@@ -136,7 +136,7 @@ local Folder = {
 }
 
 -- 新增：遞迴搜尋子資料夾中的書籍
-local function findBookInSubfolders(menu, dir_path, max_depth)
+local function findBookInSubfolders(menu, dir_path, max_depth, BookInfoManager)
     max_depth = max_depth or 3  -- 限制搜尋深度，避免無限遞迴
     if max_depth <= 0 then return nil end
 
@@ -148,7 +148,7 @@ local function findBookInSubfolders(menu, dir_path, max_depth)
     -- 先在當前目錄尋找書籍
     for _, entry in ipairs(entries) do
         if entry.is_file or entry.file then
-            local bookinfo = require("bookinfomanager"):getBookInfo(entry.path, true)
+            local bookinfo = BookInfoManager:getBookInfo(entry.path, true)
             if bookinfo and bookinfo.cover_bb and bookinfo.has_cover and bookinfo.cover_fetched
                and not bookinfo.ignore_cover then
                 return entry, bookinfo
@@ -159,7 +159,7 @@ local function findBookInSubfolders(menu, dir_path, max_depth)
     -- 如果當前目錄沒找到，遞迴搜尋子資料夾
     for _, entry in ipairs(entries) do
         if not (entry.is_file or entry.file) then  -- 是資料夾
-            local book_entry, bookinfo = findBookInSubfolders(menu, entry.path, max_depth - 1)
+            local book_entry, bookinfo = findBookInSubfolders(menu, entry.path, max_depth - 1, BookInfoManager)
             if book_entry then return book_entry, bookinfo end
         end
     end
@@ -267,7 +267,7 @@ local function patchCoverBrowser(plugin)
         if not found_book then
             for _, entry in ipairs(entries) do
                 if not (entry.is_file or entry.file) then
-                    local book_entry, bookinfo = findBookInSubfolders(self.menu, entry.path, 3)
+                    local book_entry, bookinfo = findBookInSubfolders(self.menu, entry.path, 3, BookInfoManager)
                     if book_entry and bookinfo then
                         if not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs) then
                             self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
