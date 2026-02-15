@@ -189,11 +189,10 @@ local function patchCoverBrowser(plugin)
 
     local settings_version = 0
 
-    local settings = {
-        crop_to_fit = BooleanSetting(_("Crop folder custom image"), "folder_crop_custom_image", true),
-        name_centered = BooleanSetting(_("Folder name centered"), "folder_name_centered", true),
-        show_folder_name = BooleanSetting(_("Show folder name"), "folder_name_show", true),
-    }
+    local crop_to_fit = BooleanSetting(_("Crop folder custom image"), "folder_crop_custom_image", true)
+    local name_centered = BooleanSetting(_("Folder name centered"), "folder_name_centered", true)
+    local show_folder_name = BooleanSetting(_("Show folder name"), "folder_name_show", true)
+    local settings = { crop_to_fit, name_centered, show_folder_name }
 
     -- cover item
     function MosaicMenuItem:update(...)
@@ -214,7 +213,7 @@ local function patchCoverBrowser(plugin)
             end)
             tmp_img:free()
             if success then
-                self:_setFolderCover { file = cover_file, w = w, h = h, scale_to_fit = settings.crop_to_fit.get() }
+                self:_setFolderCover { file = cover_file, w = w, h = h, scale_to_fit = crop_to_fit.get() }
                 self._foldercover_version = settings_version
                 self.bookinfo_found = true
                 return
@@ -329,8 +328,8 @@ local function patchCoverBrowser(plugin)
         local nb_size = math.max(nb_size_dimen.w, nb_size_dimen.h)
 
         local folder_name_widget
-        if settings.show_folder_name.get() then
-            folder_name_widget = (settings.name_centered.get() and CenterContainer or TopContainer):new {
+        if show_folder_name.get() then
+            folder_name_widget = (name_centered.get() and CenterContainer or TopContainer):new {
                 dimen = dimen,
                 FrameContainer:new {
                     padding = 0,
@@ -456,7 +455,7 @@ local function patchCoverBrowser(plugin)
         local item = getMenuItem(menu_items.filebrowser_settings, _("Mosaic and detailed list settings"))
         if item then
             item.sub_item_table[#item.sub_item_table].separator = true
-            for i, setting in pairs(settings) do
+            for _, setting in ipairs(settings) do
                 if
                     not getMenuItem( -- already exists ?
                         menu_items.filebrowser_settings,
