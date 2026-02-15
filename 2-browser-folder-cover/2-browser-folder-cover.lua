@@ -23,8 +23,6 @@ local util = require("util")
 local _ = require("gettext")
 local Screen = Device.screen
 
-local logger = require("logger")
-
 local FolderCover = {
     name = ".cover",
     exts = { ".jpg", ".jpeg", ".png", ".webp", ".gif" },
@@ -319,8 +317,8 @@ local function patchCoverBrowser(plugin)
         }
 
         local directory, nbitems = self: _getTextBoxes { w = size.w, h = size.h }
-        local size = nbitems: getSize()
-        local nb_size = math.max(size.w, size.h)
+        local nb_size_dimen = nbitems: getSize()
+        local nb_size = math.max(nb_size_dimen.w, nb_size_dimen.h)
 
         local folder_name_widget
         if settings.show_folder_name.get() then
