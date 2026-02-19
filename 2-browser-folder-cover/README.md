@@ -13,7 +13,7 @@ This userpatch extends KOReader's file browser (Mosaic view) to display folder c
 - If no cover is found in the folder, it will recursively search subfolders (default depth: 3) for a book cover.
 - Asynchronous cover loading: when book covers are not yet extracted by KOReader, the folder tile will automatically refresh once the cover becomes available.
 - Per-directory LRU cache for `FileChooser:getListItem` widgets (max 10 directories) and a cover source cache to avoid repeated directory scans.
-- New UI options: crop custom folder image, center folder name, show/hide folder name.
+- New UI options: crop custom folder image, show/hide folder name.
 - Respects KOReader's existing cover cache validity checks to avoid using invalid cached covers.
 
 ## How It Works
@@ -25,7 +25,7 @@ This userpatch extends KOReader's file browser (Mosaic view) to display folder c
   4. If no cover is found in the current folder, recursively search subfolders (up to depth 3) for a book cover.
   5. If book covers are still being extracted in the background, register the folder tile for automatic retry via CoverBrowser's polling mechanism.
 
-- Display: builds a mosaic item containing the cover image, folder name, and book count badge. The folder name font size is adjusted to fit available space, and the name can be displayed over a semi-transparent overlay.
+- Display: builds a mosaic item containing the cover image and folder name. The cover is bottom-aligned within the tile. The folder name font size is adjusted to fit available space, and the name is displayed over a semi-transparent overlay at the bottom of the cover.
 
 - Performance: per-directory LRU widget cache (evicts oldest when exceeding 10 directories), cover source cache to skip expensive directory scans on revisit, and settings version tracking to invalidate caches only when settings change.
 
@@ -51,7 +51,6 @@ This userpatch extends KOReader's file browser (Mosaic view) to display folder c
 - To use a custom cover, place a file named `.cover` with a supported extension in the folder (e.g. `.cover.jpg`).
 - New options appear under KOReader File browser settings → Mosaic and detailed list settings:
   - "Crop folder custom image": crop the custom image to fill the display area (default: enabled).
-  - "Folder name centered": center the folder name on the cover (default: enabled).
   - "Show folder name": toggle folder name visibility (default: enabled).
 
 ## Related Resources

@@ -10,11 +10,8 @@ local FrameContainer = require("ui/widget/container/framecontainer")
 local ImageWidget = require("ui/widget/imagewidget")
 local LineWidget = require("ui/widget/linewidget")
 local OverlapGroup = require("ui/widget/overlapgroup")
-local RightContainer = require("ui/widget/container/rightcontainer")
 local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
-local TextWidget = require("ui/widget/textwidget")
-local TopContainer = require("ui/widget/container/topcontainer")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local userpatch = require("userpatch")
@@ -129,8 +126,6 @@ local Folder = {
     face = {
         border_size = Size.border.thick,
         alpha = 0.75,
-        nb_items_font_size = 20,
-        nb_items_margin = Screen:scaleBySize(5),
         dir_max_font_size = 25,
     },
 }
@@ -190,9 +185,8 @@ local function patchCoverBrowser(plugin)
     local settings_version = 0
 
     local crop_to_fit = BooleanSetting(_("Crop folder custom image"), "folder_crop_custom_image", true)
-    local name_centered = BooleanSetting(_("Folder name centered"), "folder_name_centered", true)
     local show_folder_name = BooleanSetting(_("Show folder name"), "folder_name_show", true)
-    local settings = { crop_to_fit, name_centered, show_folder_name }
+    local settings = { crop_to_fit, show_folder_name }
 
     -- cover item
     function MosaicMenuItem:update(...)
@@ -324,13 +318,11 @@ local function patchCoverBrowser(plugin)
             overlap_align = "center",
         }
 
-        local directory, nbitems = self: _getTextBoxes { w = size.w, h = size.h }
-        local nb_size_dimen = nbitems: getSize()
-        local nb_size = math.max(nb_size_dimen.w, nb_size_dimen.h)
+        local directory = self:_getTextBoxes { w = size.w, h = size.h }
 
         local folder_name_widget
         if show_folder_name.get() then
-            folder_name_widget = (name_centered.get() and CenterContainer or TopContainer):new {
+            folder_name_widget = BottomContainer:new {
                 dimen = dimen,
                 FrameContainer:new {
                     padding = 0,
@@ -344,35 +336,10 @@ local function patchCoverBrowser(plugin)
             folder_name_widget = VerticalSpan:new { width = 0 }
         end
 
-        local nbitems_widget
-        local nb_count = tonumber(nbitems.text)
-        if nb_count and nb_count ~= 0 then
-            nbitems_widget = BottomContainer:new {
-                dimen = dimen,
-                RightContainer:new {
-                    dimen = {
-                        w = dimen.w - Folder.face.nb_items_margin,
-                        h = nb_size + Folder.face.nb_items_margin * 2 + math.ceil(nb_size * 0.125),
-                    },
-                    FrameContainer:new {
-                        padding = 0,
-                        padding_bottom = math.ceil(nb_size * 0.125),
-                        radius = math.ceil(nb_size * 0.5),
-                        background = Blitbuffer.COLOR_WHITE,
-                        CenterContainer:new { dimen = { w = nb_size, h = nb_size }, nbitems },
-                    },
-                },
-                overlap_align = "center",
-            }
-        else
-            nbitems:free()
-            nbitems_widget = VerticalSpan:new { width = 0 }
-        end
-
         local widget = CenterContainer:new {
             dimen = { w = self.width, h = self.height },
             VerticalGroup:new {
-                VerticalSpan:new { width = math.max(0, math.ceil((self.height - (top_h + dimen.h)) * 0.5)) },
+                VerticalSpan:new { width = math.max(0, self.height - (top_h + dimen.h)) },
                 LineWidget:new {
                     background = Folder.edge.color,
                     dimen = { w = math.floor(dimen.w * (Folder.edge.width ^ 2)), h = Folder.edge.thick },
@@ -384,10 +351,9 @@ local function patchCoverBrowser(plugin)
                 },
                 VerticalSpan:new { width = Folder.edge.margin },
                 OverlapGroup:new {
-                    dimen = { w = self.width, h = self.height - top_h },
+                    dimen = { w = self.width, h = dimen.h },
                     image_widget,
                     folder_name_widget,
-                    nbitems_widget,
                 },
             },
         }
@@ -402,17 +368,10 @@ local function patchCoverBrowser(plugin)
     end
 
     function MosaicMenuItem:_getTextBoxes(dimen)
-        local nbitems = TextWidget: new {
-            text = self.mandatory:match("(%d+) \u{F016}") or "", -- nb books
-            face = Font:getFace("cfont", Folder.face.nb_items_font_size),
-            bold = true,
-            padding = 0,
-        }
-
         local text = self.text
         if text:match("/$") then text = text:sub(1, -2) end -- remove "/"
         text = BD.directory(capitalize(text))
-        local available_height = dimen.h - 2 * nbitems:getSize().h
+        local available_height = dimen.h
         local dir_font_size = Folder.face.dir_max_font_size
         local directory
 
@@ -443,7 +402,7 @@ local function patchCoverBrowser(plugin)
             end
         end
 
-        return directory, nbitems
+        return directory
     end
 
     -- menu
@@ -456,7 +415,7 @@ local function patchCoverBrowser(plugin)
         local item = getMenuItem(menu_items.filebrowser_settings, _("Mosaic and detailed list settings"))
         if item then
             item.sub_item_table[#item.sub_item_table].separator = true
-            for _, setting in ipairs(settings) do
+            for __, setting in ipairs(settings) do
                 if
                     not getMenuItem( -- already exists ?
                         menu_items.filebrowser_settings,
