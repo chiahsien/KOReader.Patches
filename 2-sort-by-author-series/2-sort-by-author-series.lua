@@ -90,8 +90,10 @@ local function compareAuthorSeries(a, b, author_sort_type)
 
     if a.doc_props.series_index and b.doc_props.series_index and
        a.doc_props.series ~= "\u{FFFF}" then
-        if a.doc_props.series_index ~= b.doc_props.series_index then
-            return a.doc_props.series_index < b.doc_props.series_index
+        local idx_a = tonumber(a.doc_props.series_index) or 0
+        local idx_b = tonumber(b.doc_props.series_index) or 0
+        if idx_a ~= idx_b then
+            return idx_a < idx_b
         end
     end
 
