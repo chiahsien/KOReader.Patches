@@ -1,6 +1,7 @@
 local AlphaContainer = require("ui/widget/container/alphacontainer")
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
+local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local FileChooser = require("ui/widget/filechooser")
@@ -11,7 +12,6 @@ local LineWidget = require("ui/widget/linewidget")
 local OverlapGroup = require("ui/widget/overlapgroup")
 local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
-local TopContainer = require("ui/widget/container/topcontainer")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local userpatch = require("userpatch")
@@ -185,9 +185,8 @@ local function patchCoverBrowser(plugin)
     local settings_version = 0
 
     local crop_to_fit = BooleanSetting(_("Crop folder custom image"), "folder_crop_custom_image", true)
-    local name_centered = BooleanSetting(_("Folder name centered"), "folder_name_centered", true)
     local show_folder_name = BooleanSetting(_("Show folder name"), "folder_name_show", true)
-    local settings = { crop_to_fit, name_centered, show_folder_name }
+    local settings = { crop_to_fit, show_folder_name }
 
     -- cover item
     function MosaicMenuItem:update(...)
@@ -323,7 +322,7 @@ local function patchCoverBrowser(plugin)
 
         local folder_name_widget
         if show_folder_name.get() then
-            folder_name_widget = (name_centered.get() and CenterContainer or TopContainer):new {
+            folder_name_widget = BottomContainer:new {
                 dimen = dimen,
                 FrameContainer:new {
                     padding = 0,
