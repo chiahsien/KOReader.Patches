@@ -53,29 +53,29 @@ local function prepareItem(item, ui, sort_type)
 end
 
 local function formatInfo(item, sort_type)
-    local info = ""
     if not item.doc_props then
-        return info
+        return ""
     end
 
+    local parts = {}
+
     if item.doc_props.authors and item.doc_props.authors ~= "\u{FFFF}" then
-        local formatted_author = processAuthorName(item.doc_props.authors, sort_type)
-        info = info .. formatted_author
+        table.insert(parts, processAuthorName(item.doc_props.authors, sort_type))
     end
 
     if item.doc_props.series and item.doc_props.series ~= "\u{FFFF}" then
         if item.doc_props.series_index then
-            info = info .. " • " .. item.doc_props.series .. " #" .. item.doc_props.series_index
+            table.insert(parts, item.doc_props.series .. " #" .. item.doc_props.series_index)
         else
-            info = info .. " • " .. item.doc_props.series
+            table.insert(parts, item.doc_props.series)
         end
     end
 
     if item.doc_props.pubdate and item.doc_props.pubdate ~= "\u{FFFF}" then
-        info = info .. " • " .. item.doc_props.pubdate
+        table.insert(parts, item.doc_props.pubdate)
     end
 
-    return info
+    return table.concat(parts, " \u{2022} ")
 end
 
 local function compareAuthorSeries(a, b)
