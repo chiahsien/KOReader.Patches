@@ -351,7 +351,7 @@ local function patchCoverBrowser(plugin)
                 },
                 VerticalSpan:new { width = Folder.edge.margin },
                 OverlapGroup:new {
-                    dimen = { w = self.width, h = self.height - top_h },
+                    dimen = { w = self.width, h = dimen.h },
                     image_widget,
                     folder_name_widget,
                 },
