@@ -32,7 +32,7 @@ local function processAuthorName(author_name, sort_type)
         return author_name
     end
 
-    if sort_type == "last_first" then
+    if sort_type == "last_first" and not author_name:find(",") then
         local words = {}
         for word in author_name:gmatch("%S+") do
             table.insert(words, word)
