@@ -415,7 +415,7 @@ local function patchCoverBrowser(plugin)
         local item = getMenuItem(menu_items.filebrowser_settings, _("Mosaic and detailed list settings"))
         if item then
             item.sub_item_table[#item.sub_item_table].separator = true
-            for _, setting in ipairs(settings) do
+            for __, setting in ipairs(settings) do
                 if
                     not getMenuItem( -- already exists ?
                         menu_items.filebrowser_settings,
