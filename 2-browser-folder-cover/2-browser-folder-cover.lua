@@ -340,7 +340,7 @@ local function patchCoverBrowser(plugin)
         local widget = CenterContainer:new {
             dimen = { w = self.width, h = self.height },
             VerticalGroup:new {
-                VerticalSpan:new { width = math.max(0, math.ceil((self.height - (top_h + dimen.h)) * 0.5)) },
+                VerticalSpan:new { width = math.max(0, self.height - (top_h + dimen.h)) },
                 LineWidget:new {
                     background = Folder.edge.color,
                     dimen = { w = math.floor(dimen.w * (Folder.edge.width ^ 2)), h = Folder.edge.thick },
