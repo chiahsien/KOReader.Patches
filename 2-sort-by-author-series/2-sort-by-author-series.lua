@@ -87,12 +87,17 @@ local function compareAuthorSeries(a, b)
         return ffiUtil.strcoll(a.doc_props.series, b.doc_props.series)
     end
 
-    if a.doc_props.series_index and b.doc_props.series_index and
-       a.doc_props.series ~= "\u{FFFF}" then
-        local idx_a = tonumber(a.doc_props.series_index) or 0
-        local idx_b = tonumber(b.doc_props.series_index) or 0
-        if idx_a ~= idx_b then
-            return idx_a < idx_b
+    if a.doc_props.series ~= "\u{FFFF}" then
+        local has_idx_a = a.doc_props.series_index ~= nil
+        local has_idx_b = b.doc_props.series_index ~= nil
+        if has_idx_a and has_idx_b then
+            local idx_a = tonumber(a.doc_props.series_index) or 0
+            local idx_b = tonumber(b.doc_props.series_index) or 0
+            if idx_a ~= idx_b then
+                return idx_a < idx_b
+            end
+        elseif has_idx_a ~= has_idx_b then
+            return has_idx_a
         end
     end
 
