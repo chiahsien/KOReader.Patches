@@ -23,8 +23,6 @@ local util = require("util")
 local _ = require("gettext")
 local Screen = Device.screen
 
-local logger = require("logger")
-
 local FolderCover = {
     name = ".cover",
     exts = { ".jpg", ".jpeg", ".png", ".webp", ".gif" },
@@ -38,14 +36,18 @@ local function findCover(dir_path)
     end
 end
 
-local function getMenuItem(menu, ...) -- path
+local function getMenuItem(menu, ...) -- menu text labels to walk
     local function findItem(sub_items, texts)
         local find = {}
-        local texts = type(texts) == "table" and texts or { texts }
+        texts = type(texts) == "table" and texts or { texts }
         -- stylua: ignore
         for _, text in ipairs(texts) do find[text] = true end
         for _, item in ipairs(sub_items) do
-            local text = item.text or (item.text_func and item.text_func())
+            local text = item.text
+            if not text and item.text_func then
+                local ok, result = pcall(item.text_func)
+                text = ok and result or nil
+            end
             if text and find[text] then return item end
         end
     end
@@ -62,42 +64,57 @@ end
 
 local function toKey(...)
     local keys = {}
-    for _, key in pairs { ... } do
+    for _, key in ipairs { ... } do
         if type(key) == "table" then
-            table.insert(keys, "table")
-            for k, v in pairs(key) do
-                table.insert(keys, tostring(k))
-                table.insert(keys, tostring(v))
+            local sorted_keys = {}
+            for k in pairs(key) do
+                table.insert(sorted_keys, k)
             end
+            table.sort(sorted_keys, function(a, b) return tostring(a) < tostring(b) end)
+            table.insert(keys, "{")
+            for _, k in ipairs(sorted_keys) do
+                table.insert(keys, tostring(k) .. "=" .. tostring(key[k]))
+            end
+            table.insert(keys, "}")
         else
             table.insert(keys, tostring(key))
         end
     end
-    return table.concat(keys, "")
+    return table.concat(keys, "\0")
 end
 
 local orig_FileChooser_getListItem = FileChooser.getListItem
-local cached_list = {}
+local cached_list = {}       -- cached_list[dirpath][key] = widget
+local cached_list_order = {} -- LRU order of dirpaths, most recent last
+local cached_list_max = 10   -- max number of directories to keep in cache
+local cover_source_cache = {} -- dir_path → book_path that provides the cover
 
-function FileChooser: getListItem(dirpath, f, fullpath, attributes, collate)
+function FileChooser:getListItem(dirpath, f, fullpath, attributes, collate)
+    if not cached_list[dirpath] then
+        cached_list[dirpath] = {}
+        table.insert(cached_list_order, dirpath)
+        -- evict oldest directory if over limit
+        while #cached_list_order > cached_list_max do
+            local oldest = table.remove(cached_list_order, 1)
+            cached_list[oldest] = nil
+            cover_source_cache[oldest] = nil
+        end
+    end
     local key = toKey(dirpath, f, fullpath, attributes, collate, self.show_filter.status)
-    cached_list[key] = cached_list[key] or orig_FileChooser_getListItem(self, dirpath, f, fullpath, attributes, collate)
-    return cached_list[key]
+    local dir_cache = cached_list[dirpath]
+    dir_cache[key] = dir_cache[key] or orig_FileChooser_getListItem(self, dirpath, f, fullpath, attributes, collate)
+    return dir_cache[key]
 end
-
--- local orig_FileChooser_genItemTableFromPath = FileChooser.genItemTableFromPath
-
--- function FileChooser:genItemTableFromPath(path)
---     local start = os.clock()
---     local item_table = orig_FileChooser_genItemTableFromPath(self, path)
---     logger.info("!! !!! !!  GEN", path, (os.clock() - start) * 1000)
---     return item_table
--- end
 
 local function capitalize(sentence)
     local words = {}
     for word in sentence:gmatch("%S+") do
-        table.insert(words, word:sub(1, 1):upper() .. word:sub(2):lower())
+        local first_byte = word:byte(1)
+        if first_byte and first_byte < 0x80 then
+            table.insert(words, word:sub(1, 1):upper() .. word:sub(2):lower())
+        else
+            table.insert(words, word)
+        end
     end
     return table.concat(words, " ")
 end
@@ -118,20 +135,20 @@ local Folder = {
     },
 }
 
--- 新增：遞迴搜尋子資料夾中的書籍
-local function findBookInSubfolders(menu, dir_path, max_depth)
-    max_depth = max_depth or 3  -- 限制搜尋深度，避免無限遞迴
+-- Recursively search subfolders for a book with a valid cover
+local function findBookInSubfolders(menu, dir_path, max_depth, BookInfoManager)
+    max_depth = max_depth or 3  -- limit search depth to avoid infinite recursion
     if max_depth <= 0 then return nil end
 
     menu._dummy = true
-    local entries = menu:genItemTableFromPath(dir_path)
+    local ok, entries = pcall(menu.genItemTableFromPath, menu, dir_path)
     menu._dummy = false
-    if not entries then return nil end
+    if not ok or not entries then return nil end
 
-    -- 先在當前目錄尋找書籍
+    -- Search for books in the current directory first
     for _, entry in ipairs(entries) do
         if entry.is_file or entry.file then
-            local bookinfo = require("bookinfomanager"):getBookInfo(entry.path, true)
+            local bookinfo = BookInfoManager:getBookInfo(entry.path, true)
             if bookinfo and bookinfo.cover_bb and bookinfo.has_cover and bookinfo.cover_fetched
                and not bookinfo.ignore_cover then
                 return entry, bookinfo
@@ -139,10 +156,10 @@ local function findBookInSubfolders(menu, dir_path, max_depth)
         end
     end
 
-    -- 如果當前目錄沒找到，遞迴搜尋子資料夾
+    -- No book found in current directory, recurse into subfolders
     for _, entry in ipairs(entries) do
-        if not (entry.is_file or entry.file) then  -- 是資料夾
-            local book_entry, bookinfo = findBookInSubfolders(menu, entry.path, max_depth - 1)
+        if not (entry.is_file or entry.file) then
+            local book_entry, bookinfo = findBookInSubfolders(menu, entry.path, max_depth - 1, BookInfoManager)
             if book_entry then return book_entry, bookinfo end
         end
     end
@@ -155,60 +172,77 @@ local function patchCoverBrowser(plugin)
     local MosaicMenuItem = userpatch.getUpValue(MosaicMenu._updateItemsBuildUI, "MosaicMenuItem")
     if not MosaicMenuItem then return end -- Protect against remnants of project title
     local BookInfoManager = userpatch.getUpValue(MosaicMenuItem.update, "BookInfoManager")
+    if not BookInfoManager then return end
     local original_update = MosaicMenuItem.update
 
     -- setting
-    function BooleanSetting(text, name, default)
-        self = { text = text }
+    local function BooleanSetting(text, name, default)
+        local self = { text = text }
         self.get = function()
             local setting = BookInfoManager:getSetting(name)
-            if default then return not setting end -- false is stored as nil, so we need or own logic for boolean default
+            if default then return not setting end -- false is stored as nil, so we need our own logic for boolean default
             return setting
         end
         self.toggle = function() return BookInfoManager:toggleSetting(name) end
         return self
     end
 
-    local settings = {
-        crop_to_fit = BooleanSetting(_("Crop folder custom image"), "folder_crop_custom_image", true),
-        name_centered = BooleanSetting(_("Folder name centered"), "folder_name_centered", true),
-        show_folder_name = BooleanSetting(_("Show folder name"), "folder_name_show", true),
-    }
+    local settings_version = 0
+
+    local crop_to_fit = BooleanSetting(_("Crop folder custom image"), "folder_crop_custom_image", true)
+    local name_centered = BooleanSetting(_("Folder name centered"), "folder_name_centered", true)
+    local show_folder_name = BooleanSetting(_("Show folder name"), "folder_name_show", true)
+    local settings = { crop_to_fit, name_centered, show_folder_name }
 
     -- cover item
     function MosaicMenuItem:update(...)
         original_update(self, ...)
-        if self._foldercover_processed or self.menu.no_refresh_covers or not self.do_cover_image then return end
+        if self.menu.no_refresh_covers or not self.do_cover_image then return end
+        if self._foldercover_version == settings_version then return end
 
+        if not self.entry then return end
         if self.entry.is_file or self.entry.file or not self.mandatory then return end -- it's a file
-        local dir_path = self.entry and self.entry.path
+        local dir_path = self.entry.path
         if not dir_path then return end
 
-        self._foldercover_processed = true
-
-        local cover_file = findCover(dir_path) --custom
+        local cover_file = findCover(dir_path) -- custom .cover file
         if cover_file then
+            local tmp_img = ImageWidget:new { file = cover_file, scale_factor = 1 }
             local success, w, h = pcall(function()
-                local tmp_img = ImageWidget:new { file = cover_file, scale_factor = 1 }
                 tmp_img:_render()
-                local orig_w = tmp_img: getOriginalWidth()
-                local orig_h = tmp_img:getOriginalHeight()
-                tmp_img:free()
-                return orig_w, orig_h
+                return tmp_img:getOriginalWidth(), tmp_img:getOriginalHeight()
             end)
+            tmp_img:free()
             if success then
-                self: _setFolderCover { file = cover_file, w = w, h = h, scale_to_fit = settings.crop_to_fit.get() }
+                self:_setFolderCover { file = cover_file, w = w, h = h, scale_to_fit = crop_to_fit.get() }
+                self._foldercover_version = settings_version
+                self.bookinfo_found = true
                 return
             end
         end
 
-        self.menu._dummy = true
-        local entries = self.menu:genItemTableFromPath(dir_path) -- sorted
-        self.menu._dummy = false
-        if not entries then return end
+        -- check cover source cache: skip expensive directory scan on hit
+        local cached_book_path = cover_source_cache[dir_path]
+        if cached_book_path then
+            local bookinfo = BookInfoManager:getBookInfo(cached_book_path, true)
+            if bookinfo and bookinfo.cover_bb and bookinfo.has_cover and bookinfo.cover_fetched
+               and not bookinfo.ignore_cover
+               and not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs) then
+                self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
+                self._foldercover_version = settings_version
+                self.bookinfo_found = true
+                return
+            end
+            cover_source_cache[dir_path] = nil
+        end
 
-        -- 改進：先在當前目錄尋找書籍
+        self.menu._dummy = true
+        local ok, entries = pcall(self.menu.genItemTableFromPath, self.menu, dir_path)
+        self.menu._dummy = false
+        if not ok or not entries then return end
+
         local found_book = false
+        local has_pending_covers = false
         for _, entry in ipairs(entries) do
             if entry.is_file or entry.file then
                 local bookinfo = BookInfoManager:getBookInfo(entry.path, true)
@@ -220,21 +254,24 @@ local function patchCoverBrowser(plugin)
                     and not bookinfo.ignore_cover
                     and not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs)
                 then
-                    self: _setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
+                    self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
+                    cover_source_cache[dir_path] = entry.path
                     found_book = true
                     break
+                elseif not bookinfo or not bookinfo.cover_fetched then
+                    has_pending_covers = true
                 end
             end
         end
 
-        -- 如果當前目錄沒找到書籍，遞迴搜尋子資料夾
         if not found_book then
             for _, entry in ipairs(entries) do
-                if not (entry.is_file or entry.file) then  -- 是資料夾
-                    local book_entry, bookinfo = findBookInSubfolders(self.menu, entry.path, 3)
+                if not (entry.is_file or entry.file) then
+                    local book_entry, bookinfo = findBookInSubfolders(self.menu, entry.path, 3, BookInfoManager)
                     if book_entry and bookinfo then
                         if not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs) then
                             self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
+                            cover_source_cache[dir_path] = book_entry.path
                             found_book = true
                             break
                         end
@@ -242,9 +279,25 @@ local function patchCoverBrowser(plugin)
                 end
             end
         end
+
+        if found_book then
+            self._foldercover_version = settings_version
+            self.bookinfo_found = true
+            self._foldercover_queued = false
+        elseif has_pending_covers and self.menu.items_to_update then
+            if not self._foldercover_queued then
+                self.bookinfo_found = false
+                self._foldercover_queued = true
+                table.insert(self.menu.items_to_update, self)
+            end
+        else
+            self._foldercover_version = settings_version
+        end
     end
 
     function MosaicMenuItem:_setFolderCover(img)
+        if not img.w or not img.h or img.w <= 0 or img.h <= 0 then return end
+
         local top_h = 2 * (Folder.edge.thick + Folder.edge.margin)
         local target = {
             w = self.width - 2 * Folder.face.border_size,
@@ -272,12 +325,12 @@ local function patchCoverBrowser(plugin)
         }
 
         local directory, nbitems = self: _getTextBoxes { w = size.w, h = size.h }
-        local size = nbitems: getSize()
-        local nb_size = math.max(size.w, size.h)
+        local nb_size_dimen = nbitems: getSize()
+        local nb_size = math.max(nb_size_dimen.w, nb_size_dimen.h)
 
         local folder_name_widget
-        if settings.show_folder_name.get() then
-            folder_name_widget = (settings.name_centered.get() and CenterContainer or TopContainer):new {
+        if show_folder_name.get() then
+            folder_name_widget = (name_centered.get() and CenterContainer or TopContainer):new {
                 dimen = dimen,
                 FrameContainer:new {
                     padding = 0,
@@ -287,11 +340,13 @@ local function patchCoverBrowser(plugin)
                 overlap_align = "center",
             }
         else
+            directory:free()
             folder_name_widget = VerticalSpan:new { width = 0 }
         end
 
         local nbitems_widget
-        if tonumber(nbitems.text) ~= 0 then
+        local nb_count = tonumber(nbitems.text)
+        if nb_count and nb_count ~= 0 then
             nbitems_widget = BottomContainer:new {
                 dimen = dimen,
                 RightContainer:new {
@@ -310,6 +365,7 @@ local function patchCoverBrowser(plugin)
                 overlap_align = "center",
             }
         else
+            nbitems:free()
             nbitems_widget = VerticalSpan:new { width = 0 }
         end
 
@@ -335,12 +391,14 @@ local function patchCoverBrowser(plugin)
                 },
             },
         }
-        if self._underline_container[1] then
+        if self._underline_container and self._underline_container[1] then
             local previous_widget = self._underline_container[1]
             previous_widget:free()
         end
 
-        self._underline_container[1] = widget
+        if self._underline_container then
+            self._underline_container[1] = widget
+        end
     end
 
     function MosaicMenuItem:_getTextBoxes(dimen)
@@ -370,11 +428,17 @@ local function patchCoverBrowser(plugin)
             if directory:getSize().h <= available_height then break end
             dir_font_size = dir_font_size - 1
             if dir_font_size < 10 then -- don't go too low
-                directory:free()
-                directory.height = available_height
-                directory.height_adjust = true
-                directory.height_overflow_show_ellipsis = true
-                directory:init()
+                directory:free(true)
+                directory = TextBoxWidget:new {
+                    text = text,
+                    face = Font:getFace("cfont", 10),
+                    width = dimen.w,
+                    alignment = "center",
+                    bold = true,
+                    height = available_height,
+                    height_adjust = true,
+                    height_overflow_show_ellipsis = true,
+                }
                 break
             end
         end
@@ -392,7 +456,7 @@ local function patchCoverBrowser(plugin)
         local item = getMenuItem(menu_items.filebrowser_settings, _("Mosaic and detailed list settings"))
         if item then
             item.sub_item_table[#item.sub_item_table].separator = true
-            for i, setting in pairs(settings) do
+            for _, setting in ipairs(settings) do
                 if
                     not getMenuItem( -- already exists ?
                         menu_items.filebrowser_settings,
@@ -405,6 +469,10 @@ local function patchCoverBrowser(plugin)
                         checked_func = function() return setting.get() end,
                         callback = function()
                             setting.toggle()
+                            settings_version = settings_version + 1
+                            cached_list = {}
+                            cached_list_order = {}
+                            cover_source_cache = {}
                             self.ui.file_chooser:updateItems()
                         end,
                     })
