@@ -16,7 +16,10 @@ local function prepareItem(item, ui)
         return
     end
 
-    local doc_props = ui.bookinfo:getDocProps(item.path or item.file)
+    local ok, doc_props = pcall(ui.bookinfo.getDocProps, ui.bookinfo, item.path or item.file)
+    if not ok or not doc_props then
+        doc_props = { display_title = item.text }
+    end
     doc_props.authors = doc_props.authors or "\u{FFFF}"
     doc_props.series = doc_props.series or "\u{FFFF}"
     doc_props.display_title = doc_props.display_title or item.text
