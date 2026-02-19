@@ -5,28 +5,6 @@ local BookList = require("ui/widget/booklist")
 local ffiUtil = require("ffi/util")
 local _ = require("gettext")
 
-local function prepareItem(item, ui)
-    if not ui or not ui.bookinfo then
-        item.doc_props = {
-            authors = "\u{FFFF}",
-            series = "\u{FFFF}",
-            display_title = item.text,
-            pubdate = "\u{FFFF}"
-        }
-        return
-    end
-
-    local ok, doc_props = pcall(ui.bookinfo.getDocProps, ui.bookinfo, item.path or item.file)
-    if not ok or not doc_props then
-        doc_props = { display_title = item.text }
-    end
-    doc_props.authors = doc_props.authors or "\u{FFFF}"
-    doc_props.series = doc_props.series or "\u{FFFF}"
-    doc_props.display_title = doc_props.display_title or item.text
-    doc_props.pubdate = doc_props.pubdate or "\u{FFFF}"
-    item.doc_props = doc_props
-end
-
 local function processAuthorName(author_name, sort_type)
     if not author_name or author_name == "\u{FFFF}" then
         return author_name
@@ -48,6 +26,30 @@ local function processAuthorName(author_name, sort_type)
     end
 
     return author_name
+end
+
+local function prepareItem(item, ui, sort_type)
+    if not ui or not ui.bookinfo then
+        item.doc_props = {
+            authors = "\u{FFFF}",
+            series = "\u{FFFF}",
+            display_title = item.text,
+            pubdate = "\u{FFFF}"
+        }
+        item.author_sort_key = "\u{FFFF}"
+        return
+    end
+
+    local ok, doc_props = pcall(ui.bookinfo.getDocProps, ui.bookinfo, item.path or item.file)
+    if not ok or not doc_props then
+        doc_props = { display_title = item.text }
+    end
+    doc_props.authors = doc_props.authors or "\u{FFFF}"
+    doc_props.series = doc_props.series or "\u{FFFF}"
+    doc_props.display_title = doc_props.display_title or item.text
+    doc_props.pubdate = doc_props.pubdate or "\u{FFFF}"
+    item.doc_props = doc_props
+    item.author_sort_key = processAuthorName(doc_props.authors, sort_type)
 end
 
 local function formatInfo(item, sort_type)
@@ -76,12 +78,9 @@ local function formatInfo(item, sort_type)
     return info
 end
 
-local function compareAuthorSeries(a, b, author_sort_type)
-    local author_a = processAuthorName(a.doc_props.authors, author_sort_type)
-    local author_b = processAuthorName(b.doc_props.authors, author_sort_type)
-
-    if author_a ~= author_b then
-        return ffiUtil.strcoll(author_a, author_b)
+local function compareAuthorSeries(a, b)
+    if a.author_sort_key ~= b.author_sort_key then
+        return ffiUtil.strcoll(a.author_sort_key, b.author_sort_key)
     end
 
     if a.doc_props.series ~= b.doc_props.series then
@@ -114,13 +113,13 @@ BookList.collates.author_first_last_series_title = {
     can_collate_mixed = false,
 
     item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui)
+        CustomSorting.prepareItem(item, ui, "first_last")
     end,
 
     init_sort_func = function(cache)
         local my_cache = cache or {}
         return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b, "first_last")
+            local result = CustomSorting.compareAuthorSeries(a, b)
             if result ~= nil then
                 return result
             end
@@ -139,13 +138,13 @@ BookList.collates.author_last_first_series_title = {
     can_collate_mixed = false,
 
     item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui)
+        CustomSorting.prepareItem(item, ui, "last_first")
     end,
 
     init_sort_func = function(cache)
         local my_cache = cache or {}
         return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b, "last_first")
+            local result = CustomSorting.compareAuthorSeries(a, b)
             if result ~= nil then
                 return result
             end
@@ -164,13 +163,13 @@ BookList.collates.author_first_last_series_date = {
     can_collate_mixed = false,
 
     item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui)
+        CustomSorting.prepareItem(item, ui, "first_last")
     end,
 
     init_sort_func = function(cache)
         local my_cache = cache or {}
         return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b, "first_last")
+            local result = CustomSorting.compareAuthorSeries(a, b)
             if result ~= nil then
                 return result
             end
@@ -192,13 +191,13 @@ BookList.collates.author_last_first_series_date = {
     can_collate_mixed = false,
 
     item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui)
+        CustomSorting.prepareItem(item, ui, "last_first")
     end,
 
     init_sort_func = function(cache)
         local my_cache = cache or {}
         return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b, "last_first")
+            local result = CustomSorting.compareAuthorSeries(a, b)
             if result ~= nil then
                 return result
             end
