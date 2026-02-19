@@ -121,15 +121,14 @@ BookList.collates.author_first_last_series_title = {
         CustomSorting.prepareItem(item, ui, "first_last")
     end,
 
-    init_sort_func = function(cache)
-        local my_cache = cache or {}
+    init_sort_func = function()
         return function(a, b)
             local result = CustomSorting.compareAuthorSeries(a, b)
             if result ~= nil then
                 return result
             end
             return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end, my_cache
+        end
     end,
 
     mandatory_func = function(item)
@@ -146,15 +145,14 @@ BookList.collates.author_last_first_series_title = {
         CustomSorting.prepareItem(item, ui, "last_first")
     end,
 
-    init_sort_func = function(cache)
-        local my_cache = cache or {}
+    init_sort_func = function()
         return function(a, b)
             local result = CustomSorting.compareAuthorSeries(a, b)
             if result ~= nil then
                 return result
             end
             return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end, my_cache
+        end
     end,
 
     mandatory_func = function(item)
@@ -171,8 +169,7 @@ BookList.collates.author_first_last_series_date = {
         CustomSorting.prepareItem(item, ui, "first_last")
     end,
 
-    init_sort_func = function(cache)
-        local my_cache = cache or {}
+    init_sort_func = function()
         return function(a, b)
             local result = CustomSorting.compareAuthorSeries(a, b)
             if result ~= nil then
@@ -182,7 +179,7 @@ BookList.collates.author_first_last_series_date = {
                 return ffiUtil.strcoll(a.doc_props.pubdate, b.doc_props.pubdate)
             end
             return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end, my_cache
+        end
     end,
 
     mandatory_func = function(item)
@@ -199,8 +196,7 @@ BookList.collates.author_last_first_series_date = {
         CustomSorting.prepareItem(item, ui, "last_first")
     end,
 
-    init_sort_func = function(cache)
-        local my_cache = cache or {}
+    init_sort_func = function()
         return function(a, b)
             local result = CustomSorting.compareAuthorSeries(a, b)
             if result ~= nil then
@@ -210,7 +206,7 @@ BookList.collates.author_last_first_series_date = {
                 return ffiUtil.strcoll(a.doc_props.pubdate, b.doc_props.pubdate)
             end
             return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end, my_cache
+        end
     end,
 
     mandatory_func = function(item)
