@@ -13,10 +13,10 @@ The cleanup runs on every KOReader startup, deferred by 1 second to avoid blocki
 
 ## Features
 
-* **Multi-mode support** -- Works with all three KOReader metadata storage modes
-* **Non-blocking** -- Deferred execution avoids slowing down startup
-* **Safe by default** -- Unreadable directories or metadata are skipped, never deleted
-* **Detailed logging** -- All operations logged to `crash.log` for debugging
+* **Multi-mode support** — Works with all three KOReader metadata storage modes
+* **Non-blocking** — Deferred execution avoids slowing down startup
+* **Safe by default** — Unreadable directories or metadata are skipped, never deleted
+* **Detailed logging** — All operations logged to `crash.log` for debugging
 
 ## How It Works
 
@@ -64,7 +64,7 @@ KOReader supports three ways to store book metadata. This patch only scans the *
    - Kindle: `/mnt/us/documents/koreader/patches/`
    - Android: `/sdcard/koreader/patches/` or app-specific directory
    - Desktop: `~/.koreader/patches/`
-3. **Restart KOReader** -- The patch will automatically execute on startup
+3. **Restart KOReader** — The patch will automatically execute on startup
 
 ## Changing Metadata Storage Mode
 
@@ -75,19 +75,19 @@ This patch cleans orphaned sidecars for the *currently active* mode only. To swi
 3. Tap **Document**
 4. Tap **Book metadata location** (shows your current mode)
 5. Select one of the three options:
-   - **book folder** -- Sidecars stored alongside book files (default)
-   - **\<docsettings path\>** -- All sidecars centralized in one directory
-   - **\<hashdocsettings path\>** -- Sidecars identified by file content hash
+   - **book folder** — Sidecars stored alongside book files (default)
+   - **\<docsettings path\>** — All sidecars centralized in one directory
+   - **\<hashdocsettings path\>** — Sidecars identified by file content hash
 
-> **Note**: Switching modes does not migrate or remove sidecars from the previous location. Orphaned sidecars in the old location will not be cleaned until you switch back to that mode.
+> **Important**: Switching modes does not automatically migrate sidecars. To preserve your reading progress, highlights, and bookmarks, use **Move book metadata** (in the same Document menu) to migrate existing sidecars to the new location *before* restarting KOReader. Any sidecars left behind in the old location will be treated as orphaned and removed by this patch on the next startup.
 
 ## Usage
 
 Once installed, the patch runs automatically:
 
-1. **Startup** -- Detects your metadata storage mode and schedules cleanup (1s delay)
-2. **Scanning** -- Recursively searches the appropriate directory for `.sdr` folders
-3. **Cleanup** -- Removes orphaned `.sdr` folders whose corresponding books are missing
+1. **Startup** — Detects your metadata storage mode and schedules cleanup (1s delay)
+2. **Scanning** — Recursively searches the appropriate directory for `.sdr` folders
+3. **Cleanup** — Removes orphaned `.sdr` folders whose corresponding books are missing
 4. **Feedback** --
    - Shows a notification with the count of cleaned folders (if any were found)
    - Runs silently if no orphaned folders are found
@@ -110,7 +110,7 @@ Once installed, the patch runs automatically:
 
 **Solutions**:
 
-* Check KOReader Settings -> Document to verify your metadata storage mode
+* Check KOReader Settings → Document to verify your metadata storage mode
 * Ensure your KOReader version is up-to-date
 
 ### Patch runs but cleans unexpected folders
