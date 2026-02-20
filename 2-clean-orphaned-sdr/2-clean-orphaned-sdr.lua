@@ -63,65 +63,44 @@ local function getHomeDirectory()
 end
 
 --[[--
-Checks if a corresponding book file exists for a given sidecar directory (doc mode).
+Creates a file existence checker for "doc" mode (book folder).
 
-For a sidecar path like `/path/to/book.pdf.sdr`, this function checks if a file
-named `book.pdf` (or with any other supported extension) exists in the same directory.
+Builds the supported extension set once, then returns a closure that checks
+if a corresponding book file exists alongside the sidecar directory.
 
-@string sdr_path full path to the sidecar directory (must end with .sdr)
-@treturn bool true if a corresponding book file was found, false otherwise
+@treturn function checker function (sdr_full_path) -> bool
 ]]
-local function hasCorrespondingBook(sdr_path)
-    local base_path = sdr_path:gsub(CONFIG.SIDECAR_SUFFIX .. "$", "")
-    local dir_path = base_path:match("(.*/)") or "./"
-    local sdr_base_name = base_path:match("([^/]+)$")
-
-    -- Build list of all supported file extensions
+local function createDocModeChecker()
     local supported_extensions = {}
-    local ext_map = DocumentRegistry:getExtensions()
-    for ext, _ in pairs(ext_map) do
-        table.insert(supported_extensions, "." .. ext)
+    for ext, _ in pairs(DocumentRegistry:getExtensions()) do
+        supported_extensions["." .. ext] = true
     end
 
-    -- Search for matching book file
-    local ok, iter, dir_obj = pcall(lfs.dir, dir_path)
-    if not ok then
-        logger.warn("Cannot read directory:", dir_path)
-        return true
-    end
-    for entry in iter, dir_obj do
-        if entry ~= "." and entry ~= ".." then
-            local full_path = dir_path .. entry
-            local mode = lfs.attributes(full_path, "mode")
+    return function(sdr_full_path)
+        local base_path = sdr_full_path:gsub(CONFIG.SIDECAR_SUFFIX .. "$", "")
+        local dir_path = base_path:match("(.*/)") or "./"
+        local sdr_base_name = base_path:match("([^/]+)$")
 
-            if mode == "file" then
-                -- Check if this file matches the expected book name
-                for _, ext in ipairs(supported_extensions) do
-                    local expected_book_name = sdr_base_name .. ext
-                    if entry == expected_book_name then
+        local ok, iter, dir_obj = pcall(lfs.dir, dir_path)
+        if not ok then
+            logger.warn("Cannot read directory:", dir_path)
+            return true
+        end
+        for entry in iter, dir_obj do
+            if entry ~= "." and entry ~= ".." then
+                local full_path = dir_path .. entry
+                if lfs.attributes(full_path, "mode") == "file" then
+                    local ext = entry:match("^" .. sdr_base_name:gsub("([%.%-%+%[%]%(%)%$%^%%])", "%%%1") .. "(%..+)$")
+                    if ext and supported_extensions[ext] then
                         logger.dbg("Found matching book:", entry, "for SDR:", sdr_base_name)
                         return true
                     end
                 end
             end
         end
-    end
 
-    logger.dbg("No matching book found for SDR:", sdr_base_name)
-    return false
-end
-
---[[--
-Creates a file existence checker for "doc" mode (book folder).
-
-Returns a function that checks if a corresponding book file exists alongside
-the sidecar directory.
-
-@treturn function checker function (sdr_full_path) -> bool
-]]
-local function createDocModeChecker()
-    return function(sdr_full_path)
-        return hasCorrespondingBook(sdr_full_path)
+        logger.dbg("No matching book found for SDR:", sdr_base_name)
+        return false
     end
 end
 
@@ -381,5 +360,5 @@ local function cleanupOrphanedSdrFolders()
     end
 end
 
--- Execute the cleanup on patch load
-cleanupOrphanedSdrFolders()
+-- Defer cleanup to avoid blocking startup
+UIManager:scheduleIn(1, cleanupOrphanedSdrFolders)
