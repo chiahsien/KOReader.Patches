@@ -7,6 +7,12 @@ local _ = require("gettext")
 
 local function nilIfEmpty(s) return (s and s ~= "") and s or nil end
 
+local function strcollCompare(x, y)
+    if ffiUtil.strcoll(x, y) then return true end
+    if ffiUtil.strcoll(y, x) then return false end
+    return nil
+end
+
 -- Reorders "First Last" -> "Last, First" for last_first sort mode.
 -- Limitations: Assumes the final word is the surname. This fails for
 -- compound surnames (e.g., "Gabriel Garcia Marquez"), suffixes ("Jr.", "III"),
@@ -86,13 +92,11 @@ local function formatInfo(item, sort_type)
 end
 
 local function compareAuthorSeries(a, b)
-    if a.author_sort_key ~= b.author_sort_key then
-        return ffiUtil.strcoll(a.author_sort_key, b.author_sort_key)
-    end
+    local result = strcollCompare(a.author_sort_key, b.author_sort_key)
+    if result ~= nil then return result end
 
-    if a.doc_props.series ~= b.doc_props.series then
-        return ffiUtil.strcoll(a.doc_props.series, b.doc_props.series)
-    end
+    result = strcollCompare(a.doc_props.series, b.doc_props.series)
+    if result ~= nil then return result end
 
     if a.doc_props.series ~= "\u{FFFF}" then
         local has_idx_a = a.doc_props.series_index ~= nil
@@ -134,8 +138,9 @@ local function makeCollate(text, menu_order, sort_type, fallback_field)
                 if result ~= nil then
                     return result
                 end
-                if fallback_field == "pubdate" and a.doc_props.pubdate ~= b.doc_props.pubdate then
-                    return ffiUtil.strcoll(a.doc_props.pubdate, b.doc_props.pubdate)
+                if fallback_field == "pubdate" then
+                    result = strcollCompare(a.doc_props.pubdate, b.doc_props.pubdate)
+                    if result ~= nil then return result end
                 end
                 return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
             end
