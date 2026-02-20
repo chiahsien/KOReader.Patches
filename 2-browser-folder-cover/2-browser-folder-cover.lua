@@ -1,6 +1,5 @@
 local AlphaContainer = require("ui/widget/container/alphacontainer")
 local BD = require("ui/bidi")
-local Blitbuffer = require("ffi/blitbuffer")
 local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
@@ -8,7 +7,6 @@ local FileChooser = require("ui/widget/filechooser")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local ImageWidget = require("ui/widget/imagewidget")
-local LineWidget = require("ui/widget/linewidget")
 local OverlapGroup = require("ui/widget/overlapgroup")
 local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
@@ -117,12 +115,6 @@ local function capitalize(sentence)
 end
 
 local Folder = {
-    edge = {
-        thick = Screen: scaleBySize(2.5),
-        margin = Size.line.medium,
-        color = Blitbuffer.COLOR_GRAY_4,
-        width = 0.97,
-    },
     face = {
         border_size = Size.border.thick,
         alpha = 0.75,
@@ -311,10 +303,9 @@ local function patchCoverBrowser(plugin)
     function MosaicMenuItem:_setFolderCover(img)
         if not img.w or not img.h or img.w <= 0 or img.h <= 0 then return end
 
-        local top_h = 2 * (Folder.edge.thick + Folder.edge.margin)
         local target = {
             w = self.width - 2 * Folder.face.border_size,
-            h = self.height - 2 * Folder.face.border_size - top_h,
+            h = self.height - 2 * Folder.face.border_size,
         }
 
         local img_options = { file = img.file, image = img.data }
@@ -358,17 +349,7 @@ local function patchCoverBrowser(plugin)
         local widget = CenterContainer:new {
             dimen = { w = self.width, h = self.height },
             VerticalGroup:new {
-                VerticalSpan:new { width = math.max(0, self.height - (top_h + dimen.h)) },
-                LineWidget:new {
-                    background = Folder.edge.color,
-                    dimen = { w = math.floor(dimen.w * (Folder.edge.width ^ 2)), h = Folder.edge.thick },
-                },
-                VerticalSpan:new { width = Folder.edge.margin },
-                LineWidget:new {
-                    background = Folder.edge.color,
-                    dimen = { w = math.floor(dimen.w * Folder.edge.width), h = Folder.edge.thick },
-                },
-                VerticalSpan:new { width = Folder.edge.margin },
+                VerticalSpan:new { width = math.max(0, self.height - dimen.h) },
                 OverlapGroup:new {
                     dimen = { w = self.width, h = dimen.h },
                     image_widget,
