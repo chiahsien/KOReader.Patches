@@ -268,8 +268,12 @@ local function scanAndCleanOrphanedSdrs(dir, existence_checker, cleaned_count)
                     -- Found a .sdr folder, check if it's orphaned
                     if not existence_checker(full_path) then
                         logger.info("Cleaning orphaned SDR folder:", full_path)
-                        util.purgeDir(full_path)
-                        cleaned_count = cleaned_count + 1
+                        local purge_ok = pcall(util.purgeDir, full_path)
+                        if purge_ok then
+                            cleaned_count = cleaned_count + 1
+                        else
+                            logger.warn("Failed to remove orphaned SDR folder:", full_path)
+                        end
                     end
                 else
                     -- Recurse into subdirectories
