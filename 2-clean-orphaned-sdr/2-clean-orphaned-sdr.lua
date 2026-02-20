@@ -84,7 +84,12 @@ local function hasCorrespondingBook(sdr_path)
     end
 
     -- Search for matching book file
-    for entry in lfs.dir(dir_path) do
+    local ok, iter, dir_obj = pcall(lfs.dir, dir_path)
+    if not ok then
+        logger.warn("Cannot read directory:", dir_path)
+        return true
+    end
+    for entry in iter, dir_obj do
         if entry ~= "." and entry ~= ".." then
             local full_path = dir_path .. entry
             local mode = lfs.attributes(full_path, "mode")
@@ -165,7 +170,12 @@ local function createDirModeChecker()
         end
 
         -- Search for a matching book file with any supported extension
-        for entry in lfs.dir(dir_path) do
+        local ok, iter, dir_obj = pcall(lfs.dir, dir_path)
+        if not ok then
+            logger.warn("Cannot read directory:", dir_path)
+            return true
+        end
+        for entry in iter, dir_obj do
             if entry ~= "." and entry ~= ".." then
                 local ext = entry:match("^" .. base_name:gsub("([%.%-%+%[%]%(%)%$%^%%])", "%%%1") .. "(%..+)$")
                 if ext and supported_extensions[ext] then
@@ -194,7 +204,12 @@ local function createHashModeChecker()
     return function(sdr_full_path)
         -- Find the metadata file by pattern (metadata.<ext>.lua)
         local metadata_file = nil
-        for entry in lfs.dir(sdr_full_path) do
+        local ok, iter, dir_obj = pcall(lfs.dir, sdr_full_path)
+        if not ok then
+            logger.warn("Cannot read hash mode SDR directory:", sdr_full_path)
+            return true
+        end
+        for entry in iter, dir_obj do
             if entry:match("^metadata%..+%.lua$") then
                 metadata_file = sdr_full_path .. "/" .. entry
                 break
@@ -238,7 +253,12 @@ modes, but delegates file existence checks to a mode-specific checker function.
 local function scanAndCleanOrphanedSdrs(dir, existence_checker, cleaned_count)
     cleaned_count = cleaned_count or 0
 
-    for entry in lfs.dir(dir) do
+    local ok, iter, dir_obj = pcall(lfs.dir, dir)
+    if not ok then
+        logger.warn("Cannot read directory, skipping:", dir)
+        return cleaned_count
+    end
+    for entry in iter, dir_obj do
         if entry ~= "." and entry ~= ".." then
             local full_path = dir .. "/" .. entry
             local mode = lfs.attributes(full_path, "mode")
