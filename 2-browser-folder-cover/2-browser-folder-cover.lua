@@ -1,3 +1,30 @@
+--[[--
+Folder cover display for KOReader's Mosaic file browser.
+
+Extends MosaicMenuItem to show folder covers instead of the default directory
+icon. Covers are resolved in priority order:
+
+  1. Custom image  : `.cover.{jpg,jpeg,png,webp,gif}` in the folder
+  2. Cache hit     : previously resolved book path(s) per directory
+  3. Direct scan   : books with extracted covers in the folder
+  4. Subfolder scan: recursive search up to depth 3
+
+Two display modes are available (user-selectable via settings menu):
+  - Single : one cover image per folder tile
+  - Grid   : up to 4 covers in a 2×2 layout (falls back to single when < 2)
+
+Performance:
+  - Per-directory LRU widget cache (max 10 dirs) for FileChooser:getListItem
+  - Cover source cache (dir_path → book_path) to skip repeated directory scans
+  - Settings version counter to invalidate caches only on settings change
+
+Derived from sebdelsol/KOReader.patches with additional features.
+
+Execution Priority: 2 (late, after UIManager is ready)
+
+@module 2-browser-folder-cover
+]]
+
 local AlphaContainer = require("ui/widget/container/alphacontainer")
 local BD = require("ui/bidi")
 local BottomContainer = require("ui/widget/container/bottomcontainer")
@@ -20,11 +47,21 @@ local util = require("util")
 local _ = require("gettext")
 local Screen = Device.screen
 
+--[[--
+Custom cover file configuration.
+
+@table FolderCover
+@field name base filename without extension
+@field exts supported image extensions, checked in order
+]]
 local FolderCover = {
     name = ".cover",
     exts = { ".jpg", ".jpeg", ".png", ".webp", ".gif" },
 }
 
+--- Finds a custom cover image file in the given directory.
+-- Checks for FolderCover.name with each extension in order.
+-- @treturn string|nil path to the cover file, or nil if not found
 local function findCover(dir_path)
     local path = dir_path ..  "/" .. FolderCover.name
     for _, ext in ipairs(FolderCover.exts) do
@@ -33,7 +70,11 @@ local function findCover(dir_path)
     end
 end
 
-local function getMenuItem(menu, ...) -- menu text labels to walk
+--- Walks a nested menu structure by text labels to find a specific item.
+-- Accepts varargs of text labels (or tables of labels for alternatives).
+-- Each level walks sub_item_table matching by text or text_func().
+-- @treturn table|nil the matched menu item, or nil if any level fails
+local function getMenuItem(menu, ...)
     local function findItem(sub_items, texts)
         local find = {}
         texts = type(texts) == "table" and texts or { texts }
@@ -59,6 +100,9 @@ local function getMenuItem(menu, ...) -- menu text labels to walk
     return item
 end
 
+--- Builds a deterministic cache key from mixed-type arguments.
+-- Tables are serialized with sorted keys; values are NUL-separated to
+-- prevent collisions (e.g., {"ab","c"} vs {"a","bc"}).
 local function toKey(...)
     local keys = {}
     for _, key in ipairs { ... } do
@@ -80,6 +124,10 @@ local function toKey(...)
     return table.concat(keys, "\0")
 end
 
+--- Per-directory LRU widget cache for FileChooser:getListItem.
+-- Wraps the original to cache widgets keyed by all arguments plus filter
+-- status. Evicts oldest directory when exceeding cached_list_max entries,
+-- and clears the corresponding cover_source_cache entry.
 local orig_FileChooser_getListItem = FileChooser.getListItem
 local cached_list = {}       -- cached_list[dirpath][key] = widget
 local cached_list_order = {} -- LRU order of dirpaths, most recent last
@@ -103,6 +151,9 @@ function FileChooser:getListItem(dirpath, f, fullpath, attributes, collate)
     return dir_cache[key]
 end
 
+--- Title-cases each word in a sentence, skipping non-ASCII words.
+-- ASCII words get standard capitalization; multi-byte (CJK, accented)
+-- words are left unchanged to avoid corrupting UTF-8 sequences.
 local function capitalize(sentence)
     local words = {}
     for word in sentence:gmatch("%S+") do
@@ -116,6 +167,13 @@ local function capitalize(sentence)
     return table.concat(words, " ")
 end
 
+--[[--
+Visual constants for folder cover tiles.
+
+@table Folder
+@field face  border, overlay alpha, and max font size for folder name
+@field grid  gap between cells in 2×2 grid mode
+]]
 local Folder = {
     face = {
         border_size = Size.border.thin,
@@ -127,7 +185,11 @@ local Folder = {
     },
 }
 
--- Recursively search subfolders for a book with a valid cover
+--- Recursively searches subfolders for the first book with a valid cover.
+-- Sets menu._dummy = true during genItemTableFromPath to suppress UI side
+-- effects, restored via pcall even on error.
+-- @int max_depth maximum recursion depth (default 3)
+-- @treturn table,table book entry and its bookinfo, or nil
 local function findBookInSubfolders(menu, dir_path, max_depth, BookInfoManager)
     max_depth = max_depth or 3  -- limit search depth to avoid infinite recursion
     if max_depth <= 0 then return nil end
@@ -159,6 +221,9 @@ local function findBookInSubfolders(menu, dir_path, max_depth, BookInfoManager)
     return nil
 end
 
+--- Main entry point: patches the CoverBrowser plugin via registerPatchPluginFunc.
+-- Extracts MosaicMenuItem and BookInfoManager from CoverBrowser's upvalues,
+-- then monkey-patches MosaicMenuItem:update() and adds settings menu items.
 local function patchCoverBrowser(plugin)
     local MosaicMenu = require("mosaicmenu")
     local MosaicMenuItem = userpatch.getUpValue(MosaicMenu._updateItemsBuildUI, "MosaicMenuItem")
@@ -167,7 +232,9 @@ local function patchCoverBrowser(plugin)
     if not BookInfoManager then return end
     local original_update = MosaicMenuItem.update
 
-    -- setting
+    --- Creates a boolean setting backed by BookInfoManager.
+    -- Returns a closure table with get() and toggle() methods.
+    -- When default is true, the setting is inverted: nil (absent) means enabled.
     local function BooleanSetting(text, name, default)
         local self = { text = text }
         self.get = function()
@@ -199,6 +266,7 @@ local function patchCoverBrowser(plugin)
     -- In grid mode, collects up to 4 book covers and dispatches to _setFolderCoverGrid.
     -- A single cover in grid mode falls back to _setFolderCover (full-size display).
 
+    --- Checks whether a bookinfo entry has a valid, up-to-date cover.
     local function hasValidCover(bookinfo, cover_specs)
         return bookinfo
             and bookinfo.cover_bb
@@ -208,6 +276,8 @@ local function patchCoverBrowser(plugin)
             and not BookInfoManager.isCachedCoverInvalid(bookinfo, cover_specs)
     end
 
+    --- Dispatches covers to single or grid display based on count and mode.
+    -- @treturn bool true if at least one cover was displayed
     local function setCoverFromList(item, covers)
         if #covers == 0 then return false end
         if #covers == 1 or getCoverMode() == COVER_MODE.SINGLE then
@@ -341,6 +411,10 @@ local function patchCoverBrowser(plugin)
         end
     end
 
+    --- Renders a single cover image into the folder tile.
+    -- Custom .cover images use aspect fill (crop to fit); book covers use
+    -- aspect fit (letterbox). Replaces _underline_container[1] directly,
+    -- freeing the previous widget to avoid memory leaks.
     function MosaicMenuItem:_setFolderCover(img)
         if not img.w or not img.h or img.w <= 0 or img.h <= 0 then return end
 
@@ -408,6 +482,10 @@ local function patchCoverBrowser(plugin)
         end
     end
 
+    --- Renders up to 4 book covers in a 2×2 grid layout.
+    -- Each cell uses aspect fill (crops overflow). Partial grids are supported:
+    -- 2 covers fill the top row, 3 covers add the bottom-left cell.
+    -- Replaces _underline_container[1], freeing the previous widget.
     function MosaicMenuItem:_setFolderCoverGrid(covers)
         local border = Folder.face.border_size
         local gap = Folder.grid.gap
@@ -502,6 +580,9 @@ local function patchCoverBrowser(plugin)
         end
     end
 
+    --- Builds a folder name TextBoxWidget with auto-sizing.
+    -- Shrinks font from dir_max_font_size down to 10 until the text fits
+    -- the available height. At the minimum size, enables ellipsis truncation.
     function MosaicMenuItem:_getTextBoxes(dimen)
         local text = self.text
         if text:match("/$") then text = text:sub(1, -2) end -- remove "/"
@@ -540,7 +621,9 @@ local function patchCoverBrowser(plugin)
         return directory
     end
 
-    -- menu
+    --- Injects folder cover settings into CoverBrowser's "Mosaic and detailed
+    -- list settings" submenu: cover style (single/grid), crop toggle, and
+    -- folder name visibility. Uses getMenuItem to avoid duplicate entries.
     local orig_CoverBrowser_addToMainMenu = plugin.addToMainMenu
 
     function plugin:addToMainMenu(menu_items)

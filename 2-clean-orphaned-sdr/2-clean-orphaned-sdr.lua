@@ -40,14 +40,10 @@ local CONFIG = {
     SIDECAR_SUFFIX = ".sdr",
 }
 
---[[--
-Retrieves the home directory for book storage.
-
-Attempts to read the configured home directory from settings, falls back to
-device home directory or current directory if not found or invalid.
-
-@treturn string path to the home directory
-]]
+--- Retrieves the home directory for book storage.
+-- Attempts to read the configured home directory from settings, falls back to
+-- device home directory or current directory if not found or invalid.
+-- @treturn string path to the home directory
 local function getHomeDirectory()
     local home_dir = G_reader_settings:readSetting("home_dir")
     if not home_dir or lfs.attributes(home_dir, "mode") ~= "directory" then
@@ -57,14 +53,10 @@ local function getHomeDirectory()
     return home_dir
 end
 
---[[--
-Creates a file existence checker for "doc" mode (book folder).
-
-Builds the supported extension set once, then returns a closure that checks
-if a corresponding book file exists alongside the sidecar directory.
-
-@treturn function checker function (sdr_full_path) -> bool
-]]
+--- Creates a file existence checker for "doc" mode (book folder).
+-- Builds the supported extension set once, then returns a closure that checks
+-- if a corresponding book file exists alongside the sidecar directory.
+-- @treturn function checker function (sdr_full_path) → bool
 local function createDocModeChecker()
     local supported_extensions = {}
     for ext, _ in pairs(DocumentRegistry:getExtensions()) do
@@ -100,20 +92,15 @@ local function createDocModeChecker()
     end
 end
 
---[[--
-Creates a file existence checker for "dir" mode (centralized directory).
-
-In dir mode, the sdr path mirrors the original book path with the last extension
-stripped. For example:
-  - Book: /mnt/onboard/Books/novel.epub
-  - Sidecar: ~/.koreader/docsettings/mnt/onboard/Books/novel.sdr
-
-To check if the original book still exists, we strip the docsettings prefix and
-the .sdr suffix to recover the base path, then look for a file with any supported
-extension at that location.
-
-@treturn function checker function (sdr_full_path) -> bool
-]]
+--- Creates a file existence checker for "dir" mode (centralized directory).
+-- In dir mode, the sdr path mirrors the original book path with the last extension
+-- stripped. For example:
+--   - Book: /mnt/onboard/Books/novel.epub
+--   - Sidecar: ~/.koreader/docsettings/mnt/onboard/Books/novel.sdr
+-- To check if the original book still exists, we strip the docsettings prefix and
+-- the .sdr suffix to recover the base path, then look for a file with any supported
+-- extension at that location.
+-- @treturn function checker function (sdr_full_path) → bool
 local function createDirModeChecker()
     local doc_settings_dir = DataStorage:getDocSettingsDir()
 
@@ -167,16 +154,12 @@ local function createDirModeChecker()
     end
 end
 
---[[--
-Creates a file existence checker for "hash" mode (hash-based storage).
-
-In hash mode, sidecars are stored by file content hash. The metadata filename
-is `metadata.<ext>.lua` (e.g., `metadata.epub.lua`), not a fixed name.
-The checker scans the sdr directory for any matching metadata file, reads the
-stored doc_path, and verifies the original book still exists.
-
-@treturn function checker function (sdr_full_path) -> bool
-]]
+--- Creates a file existence checker for "hash" mode (hash-based storage).
+-- In hash mode, sidecars are stored by file content hash. The metadata filename
+-- is `metadata.<ext>.lua` (e.g., `metadata.epub.lua`), not a fixed name.
+-- The checker scans the sdr directory for any matching metadata file, reads the
+-- stored doc_path, and verifies the original book still exists.
+-- @treturn function checker function (sdr_full_path) → bool
 local function createHashModeChecker()
     return function(sdr_full_path)
         -- Find the metadata file by pattern (metadata.<ext>.lua)
@@ -218,17 +201,13 @@ local function createHashModeChecker()
     end
 end
 
---[[--
-Unified scanner for orphaned .sdr folders with mode-specific existence checking.
-
-Uses a Strategy Pattern approach: the same recursive scanning logic works for all
-modes, but delegates file existence checks to a mode-specific checker function.
-
-@string dir current directory being scanned
-@function existence_checker function(sdr_full_path) -> bool that determines if file exists
-@int cleaned_count running count of cleaned folders (default: 0)
-@treturn int total number of folders cleaned
-]]
+--- Unified scanner for orphaned .sdr folders with mode-specific existence checking.
+-- Uses a Strategy Pattern approach: the same recursive scanning logic works for all
+-- modes, but delegates file existence checks to a mode-specific checker function.
+-- @string dir current directory being scanned
+-- @function existence_checker function(sdr_full_path) → bool that determines if file exists
+-- @int cleaned_count running count of cleaned folders (default: 0)
+-- @treturn int total number of folders cleaned
 local function scanAndCleanOrphanedSdrs(dir, existence_checker, cleaned_count)
     cleaned_count = cleaned_count or 0
 
@@ -299,15 +278,10 @@ local MODES = {
     },
 }
 
---[[--
-Main cleanup function with automatic mode detection and handling.
-
-Reads the current metadata storage mode setting from G_reader_settings and
-dispatches to the appropriate scanner with the corresponding existence checker.
-Displays user-friendly messages about the cleanup results.
-
-@treturn nil
-]]
+--- Main cleanup function with automatic mode detection and handling.
+-- Reads the current metadata storage mode setting from G_reader_settings and
+-- dispatches to the appropriate scanner with the corresponding existence checker.
+-- Displays user-friendly messages about the cleanup results.
 local function cleanupOrphanedSdrFolders()
     -- Determine the current metadata storage mode
     local preferred_location = G_reader_settings:readSetting("document_metadata_folder", "doc")

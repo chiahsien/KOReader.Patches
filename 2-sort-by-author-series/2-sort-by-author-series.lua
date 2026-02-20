@@ -1,6 +1,5 @@
 --[[--
 Custom sorting algorithms for KOReader file browser.
-Place this file in koreader/patches/
 
 Adds four collate entries to BookList.collates, combining two author-name
 orderings (first-name-first vs last-name-first) with two fallback fields
