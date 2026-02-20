@@ -28,7 +28,7 @@ This userpatch extends KOReader's file browser (Mosaic view) to display folder c
 
 - Display:
   - **Single cover mode**: one book cover per folder tile, bottom-aligned. The folder name is displayed over a semi-transparent overlay at the bottom.
-  - **Grid (2×2) mode**: up to 4 book covers arranged in a 2×2 grid with a fine gap between cells and a single shared border. Partial grids are supported: 2 covers fill the top row; 3 covers fill the top row and bottom-left. If only 1 cover is found, it falls back to single cover display. The folder name overlay works the same as in single mode.
+  - **Grid (2×2) mode**: up to 4 book covers arranged in a 2×2 grid with a fine gap between cells and a single shared border. Each cell uses aspect fill scaling (crops overflow to fill the cell). Partial grids are supported: 2 covers fill the top row; 3 covers fill the top row and bottom-left. If only 1 cover is found, it falls back to single cover display. The folder name overlay works the same as in single mode.
 
 - Performance: per-directory LRU widget cache (evicts oldest when exceeding 10 directories), cover source cache to skip expensive directory scans on revisit, and settings version tracking to invalidate caches only when settings change.
 

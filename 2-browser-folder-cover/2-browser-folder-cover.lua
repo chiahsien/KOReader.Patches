@@ -192,7 +192,7 @@ local function patchCoverBrowser(plugin)
 
     -- cover item
     -- Directories skip original_update() to avoid the e-ink flash caused by painting
-    -- the default rounded-box tile first, then replacing it with the cover widget.
+    -- the default directory tile first, then replacing it with the cover widget.
     -- Instead, we find and set the cover directly, falling back to original_update()
     -- only when no cover is available.
     --
