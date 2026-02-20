@@ -65,15 +65,15 @@ local function prepareItem(item, ui, sort_type)
     item.author_sort_key = processAuthorName(doc_props.authors, sort_type)
 end
 
-local function formatInfo(item, sort_type)
+local function formatInfo(item)
     if not item.doc_props then
         return ""
     end
 
     local parts = {}
 
-    if item.doc_props.authors and item.doc_props.authors ~= "\u{FFFF}" then
-        table.insert(parts, processAuthorName(item.doc_props.authors, sort_type))
+    if item.author_sort_key and item.author_sort_key ~= "\u{FFFF}" then
+        table.insert(parts, item.author_sort_key)
     end
 
     if item.doc_props.series and item.doc_props.series ~= "\u{FFFF}" then
@@ -140,7 +140,7 @@ local function makeCollate(text, menu_order, sort_type, fallback_field)
         end,
 
         mandatory_func = function(item)
-            return formatInfo(item, sort_type)
+            return formatInfo(item)
         end,
     }
 end
