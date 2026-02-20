@@ -417,8 +417,13 @@ local function patchCoverBrowser(plugin)
         local cell_h = math.floor((target_h - gap) / 2)
 
         local function makeCell(img)
-            local scale = math.min(cell_w / img.w, cell_h / img.h)
-            local image = ImageWidget:new { image = img.data, scale_factor = scale }
+            local scale = math.max(cell_w / img.w, cell_h / img.h)
+            local image = ImageWidget:new {
+                image = img.data,
+                scale_factor = scale,
+                width = cell_w,
+                height = cell_h,
+            }
             return CenterContainer:new {
                 dimen = { w = cell_w, h = cell_h },
                 image,
