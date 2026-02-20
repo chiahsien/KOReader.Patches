@@ -65,44 +65,6 @@ local function getHomeDirectory()
 end
 
 --[[--
-Safely removes a sidecar directory and all its contents.
-
-Recursively deletes all files and subdirectories within the target directory,
-then removes the empty directory itself.  Logs all operations for debugging.
-
-@string dir path to the sidecar directory to remove
-@treturn bool true if removal succeeded, false otherwise
-]]
-local function safeRemoveSidecarDir(dir)
-    if not dir or lfs.attributes(dir, "mode") ~= "directory" then
-        return false
-    end
-
-    -- Remove all files and subdirectories
-    for entry in lfs.dir(dir) do
-        if entry ~= "." and entry ~= ".." then
-            local full_path = dir .. "/" .. entry
-            local mode = lfs.attributes(full_path, "mode")
-            if mode == "file" then
-                os.remove(full_path)
-                logger.dbg("Removed file:", full_path)
-            elseif mode == "directory" then
-                safeRemoveSidecarDir(full_path) -- Recursive call for subdirectories
-            end
-        end
-    end
-
-    -- Now remove the empty directory
-    local success = os.remove(dir)
-    if success then
-        logger.info("Successfully removed directory:", dir)
-    else
-        logger.warn("Failed to remove directory:", dir)
-    end
-    return success
-end
-
---[[--
 Checks if a corresponding book file exists for a given sidecar directory (doc mode).
 
 For a sidecar path like `/path/to/book.pdf.sdr`, this function checks if a file
@@ -250,7 +212,7 @@ local function scanAndCleanOrphanedSdrs(dir, existence_checker, cleaned_count)
                     -- Found a .sdr folder, check if it's orphaned
                     if not existence_checker(full_path) then
                         logger.info("Cleaning orphaned SDR folder:", full_path)
-                        safeRemoveSidecarDir(full_path)
+                        util.purgeDir(full_path)
                         cleaned_count = cleaned_count + 1
                     end
                 else
