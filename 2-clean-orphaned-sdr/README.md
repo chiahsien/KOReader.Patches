@@ -3,129 +3,130 @@
 
 # KOReader Orphaned SDR Cleaner
 
-A KOReader user patch that automatically cleans up orphaned `.sdr` (sidecar) folders across all metadata storage modes.
+A KOReader user patch that automatically cleans up orphaned `.sdr` (sidecar) folders for the currently active metadata storage mode.
 
 ## Overview
 
-This user patch scans your KOReader data directories for `.sdr` folders that no longer have corresponding book files and safely removes them.  This helps reclaim storage space when books are deleted or moved outside of KOReader.
+This user patch detects the currently configured metadata storage mode and scans the corresponding directory for `.sdr` folders that no longer have corresponding book files. Orphaned sidecars are safely removed to reclaim storage space.
+
+The cleanup runs on every KOReader startup, deferred by 1 second to avoid blocking the UI.
 
 ## Features
 
-* **🔄 Multi-mode support** :  Works with all three KOReader metadata storage modes
-* **📁 Automatic cleanup** : Runs on every KOReader startup
-* **🎯 Precise detection** : Uses mode-specific logic to accurately identify orphaned folders
-* **📝 Detailed logging** : Comprehensive logging for debugging and verification
+* **Multi-mode support** — Works with all three KOReader metadata storage modes
+* **Non-blocking** — Deferred execution avoids slowing down startup
+* **Safe by default** — Unreadable directories or metadata are skipped, never deleted
+* **Detailed logging** — All operations logged to `crash.log` for debugging
 
 ## How It Works
 
 ### Metadata Storage Modes
 
-KOReader supports three ways to store book metadata:
+KOReader supports three ways to store book metadata. This patch only scans the *active* mode:
 
-| Mode                    | Location                       | How Sidecars are Named                   | Supported |
-| ----------------------- | ------------------------------ | ---------------------------------------- | --------- |
-| **Book folder** (`doc`) | Alongside book files            | Mirrors filename:`book.pdf` → `book.sdr`  | ✅ Yes    |
-| **Directory** (`dir`)   | `~/.koreader/docsettings/`     | Mirrors folder structure                 | ✅ Yes    |
-| **Hash** (`hash`)       | `~/.koreader/hashdocsettings/` | Based on file content hash                | ✅ Yes    |
+| Mode                    | Location                       | How Sidecars are Named                                |
+| ----------------------- | ------------------------------ | ----------------------------------------------------- |
+| **Book folder** (`doc`) | Alongside book files           | `book.sdr` next to `book.epub`                        |
+| **Directory** (`dir`)   | `~/.koreader/docsettings/`     | Mirrors original path: `<prefix>/path/to/book.sdr`    |
+| **Hash** (`hash`)       | `~/.koreader/hashdocsettings/` | `XX/<hash>.sdr` based on file content hash            |
+
+> **Note**: KOReader strips the *last* extension to form the sdr name. For example, `book.kepub.epub` becomes `book.kepub.sdr`, not `book.sdr`.
 
 ### Cleanup Process
 
-#### For "Book folder" mode:
+#### For "Book folder" mode (`doc`):
 
 1. Recursively scans your Home directory
 2. Finds all `.sdr` folders
 3. Checks if a corresponding book file exists (same basename, any supported extension)
 4. Removes orphaned folders that have no matching book
 
-#### For "Directory" mode:
+#### For "Directory" mode (`dir`):
 
 1. Scans the centralized `~/.koreader/docsettings/` directory
-2. Reconstructs original file paths from directory structure
-3. Checks if the original book file still exists
-4. Removes orphaned sidecars when original books are gone
+2. Strips the docsettings prefix and `.sdr` suffix to reconstruct the original book path
+3. Searches for a file with any supported extension at the original location
+4. Removes orphaned sidecars when no matching book is found
 
-#### For "Hash" mode:
+#### For "Hash" mode (`hash`):
 
 1. Scans `~/.koreader/hashdocsettings/` with its two-level hash structure
-2. Reads the stored `doc_path` from each sidecar's `metadata.lua`
-3. Verifies if the book file still exists at that path
+2. Finds the metadata file by pattern (`metadata.<ext>.lua`, e.g., `metadata.epub.lua`)
+3. Reads the stored `doc_path` and verifies if the book file still exists
 4. Removes sidecars whose books have been deleted or moved
+5. Skips sidecars with unreadable metadata (does not delete them)
 
 ## Installation
 
-### Steps
+1. **Download** `2-clean-orphaned-sdr.lua` from this repository
+2. **Copy** it to your KOReader patches directory:
+   - Kobo: `/mnt/onboard/.adds/koreader/patches/`
+   - Kindle: `/mnt/us/documents/koreader/patches/`
+   - Android: `/sdcard/koreader/patches/` or app-specific directory
+   - Desktop: `~/.koreader/patches/`
+3. **Restart KOReader** — The patch will automatically execute on startup
 
-1. **Download the patch file** `2-clean-orphaned-sdr.lua` from this repository
-2. **Locate your KOReader patches directory** :
+## Changing Metadata Storage Mode
 
-* Usually found at `<koreader_data_dir>/patches/`
-* Common paths:
-  - Kobo: `/mnt/onboard/.adds/koreader/patches/`
-  - Kindle: `/mnt/us/documents/koreader/patches/`
-  - Android: `/sdcard/koreader/patches/` or app-specific directory
-  - Desktop: `~/.koreader/patches/`
+This patch cleans orphaned sidecars for the *currently active* mode only. To switch modes in KOReader:
 
-3. **Copy the patch file** to the patches directory
-4. **Restart KOReader** - The patch will automatically execute on startup
+1. Tap the top of the screen to open the **top menu**
+2. Tap the **gear icon** (Settings)
+3. Tap **Document**
+4. Tap **Book metadata location** (shows your current mode)
+5. Select one of the three options:
+   - **book folder** — Sidecars stored alongside book files (default)
+   - **\<docsettings path\>** — All sidecars centralized in one directory
+   - **\<hashdocsettings path\>** — Sidecars identified by file content hash
+
+> **Important**: Switching modes does not automatically migrate sidecars. To preserve your reading progress, highlights, and bookmarks, use **Move book metadata** (in the same Document menu) to migrate existing sidecars to the new location *before* restarting KOReader. Any sidecars left behind in the old location will be treated as orphaned and removed by this patch on the next startup.
 
 ## Usage
 
 Once installed, the patch runs automatically:
 
-1. **On startup** : Automatically detects your metadata storage mode
-2. **Validation** : Confirms the mode is valid (handles any future modes gracefully)
-3. **Scanning** : Recursively searches the appropriate directory
-4. **Cleanup** : Removes all orphaned `.sdr` folders
-5. **Feedback** :
-   * Shows a notification with the count of cleaned folders
-   * If no orphaned folders found, runs silently
-   * Logs all operations to `crash.log`
+1. **Startup** — Detects your metadata storage mode and schedules cleanup (1s delay)
+2. **Scanning** — Recursively searches the appropriate directory for `.sdr` folders
+3. **Cleanup** — Removes orphaned `.sdr` folders whose corresponding books are missing
+4. **Feedback** --
+   - Shows a notification with the count of cleaned folders (if any were found)
+   - Runs silently if no orphaned folders are found
+   - Logs all operations to `crash.log`
 
-### Troubleshooting
+## Troubleshooting
 
 ### Patch not running
 
-**Symptoms** : No notification on startup, nothing in logs
+**Symptoms**: No notification on startup, nothing in logs
 
-**Solutions** :
+**Solutions**:
 
-* Verify the filename is `2-clean-orphaned-sdr.lua` (the `2-` prefix is required for priority)
+* Verify the filename is `2-clean-orphaned-sdr.lua` (the `2-` prefix is required)
 * Check that it's in the correct `patches` directory
 * Ensure KOReader can access the file (check permissions)
 * Restart KOReader after installation
 
 ### Error: "Unknown metadata storage mode"
 
-**Symptoms** : Notification shows unknown storage mode
-
-**Solutions** :
+**Solutions**:
 
 * Check KOReader Settings → Document to verify your metadata storage mode
 * Ensure your KOReader version is up-to-date
 
 ### Patch runs but cleans unexpected folders
 
-**Solutions** :
+**Solutions**:
 
 * Review `crash.log` for detailed debugging information
 * Check that your metadata storage mode is correctly set
 * Verify your Home directory is correctly configured
 
-## Limitations & Known Issues
+## Limitations
 
-* Does not handle broken symbolic links (rare case)
-* Hash mode depends on accurate `doc_path` in metadata files
+* Does not handle broken symbolic links
+* Hash mode depends on readable `doc_path` in metadata files; unreadable metadata is skipped
 * Very large libraries (>10,000 books) may take several seconds
-* Sidecar directories with unusual permissions might not be deletable
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Test your changes across different platforms and storage modes
-2. Add appropriate logging statements for debugging
-3. Update documentation if adding features
-4. Follow the existing code style (LuaDoc comments, consistent formatting)
+* Sidecar directories with restricted permissions might not be deletable (logged as warnings)
 
 ## Related Resources
 
@@ -147,7 +148,11 @@ Contributions are welcome! Please:
 
 ### Q: How often does the patch run?
 
-**A:** Every time KOReader starts. This is by design to keep your metadata directory clean.
+**A:** Every time KOReader starts, with a 1-second delay to avoid blocking startup.
+
+### Q: Does it scan all three modes at once?
+
+**A:** No. It only scans the currently active metadata storage mode configured in KOReader settings.
 
 ### Q: Can I disable the patch?
 
@@ -155,6 +160,4 @@ Contributions are welcome! Please:
 
 ---
 
-**⚠️ Important Disclaimer** : This patch permanently deletes folders. While it has been designed with safety in mind, always backup important data before using automated cleanup tools. The authors are not responsible for accidental data loss.
-
-For issues or questions, please open an issue on GitHub or consult KOReader's documentation.
+**WARNING**: This patch permanently deletes folders. While it has been designed with safety in mind (unreadable directories and metadata are always skipped), always backup important data before using automated cleanup tools. The authors are not responsible for accidental data loss.

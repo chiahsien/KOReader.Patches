@@ -1,11 +1,16 @@
 --[[--
-User patch to clean up orphaned .sdr (sidecar) folders across all metadata storage modes.
+User patch to clean up orphaned .sdr (sidecar) folders for the active metadata
+storage mode.
 
-This patch scans for and safely removes sidecar folders that no longer have corresponding
-book files.  It supports all three metadata storage modes:
-  - "doc"  : sidecar folders are stored alongside book files
-  - "dir"  : all sidecars are centralized in ~/.koreader/docsettings/
-  - "hash" : sidecars are stored by file hash in ~/.koreader/hashdocsettings/
+On each startup (deferred by 1 second), this patch detects the currently
+configured metadata storage mode and scans the corresponding directory for
+sidecar folders whose book files no longer exist. Orphaned sidecars are
+removed to reclaim storage space.
+
+Supported modes:
+  - "doc"  : sidecar folders stored alongside book files
+  - "dir"  : sidecars centralized in the docsettings directory
+  - "hash" : sidecars stored by file content hash
 
 Execution Priority: 2 (late, after UIManager is ready)
 
@@ -30,22 +35,9 @@ Configuration constants for sidecar cleanup.
 
 @table CONFIG
 @field SIDECAR_SUFFIX string suffix used for sidecar directories (.sdr)
-@field METADATA_FILENAME string metadata file name (metadata.lua)
 ]]
 local CONFIG = {
     SIDECAR_SUFFIX = ".sdr",
-    METADATA_FILENAME = "metadata.lua",
-}
-
---[[--
-Display name mappings for metadata storage modes.
-
-@table METADATA_FOLDER_STR
-]]
-local METADATA_FOLDER_STR = {
-    ["doc"]  = _("book folder"),
-    ["dir"]  = DocSettings.getSidecarStorage("dir"),
-    ["hash"] = DocSettings.getSidecarStorage("hash"),
 }
 
 --[[--
@@ -61,166 +53,166 @@ local function getHomeDirectory()
     if not home_dir or lfs.attributes(home_dir, "mode") ~= "directory" then
         home_dir = Device.home_dir or lfs.currentdir()
     end
+    logger.dbg("CleanOrphanedSDR: resolved home directory:", home_dir)
     return home_dir
 end
 
 --[[--
-Safely removes a sidecar directory and all its contents.
+Creates a file existence checker for "doc" mode (book folder).
 
-Recursively deletes all files and subdirectories within the target directory,
-then removes the empty directory itself.  Logs all operations for debugging.
+Builds the supported extension set once, then returns a closure that checks
+if a corresponding book file exists alongside the sidecar directory.
 
-@string dir path to the sidecar directory to remove
-@treturn bool true if removal succeeded, false otherwise
+@treturn function checker function (sdr_full_path) -> bool
 ]]
-local function safeRemoveSidecarDir(dir)
-    if not dir or lfs.attributes(dir, "mode") ~= "directory" then
-        return false
-    end
-
-    -- Remove all files and subdirectories
-    for entry in lfs.dir(dir) do
-        if entry ~= "." and entry ~= ".." then
-            local full_path = dir .. "/" .. entry
-            local mode = lfs.attributes(full_path, "mode")
-            if mode == "file" then
-                os.remove(full_path)
-                logger.dbg("Removed file:", full_path)
-            elseif mode == "directory" then
-                safeRemoveSidecarDir(full_path) -- Recursive call for subdirectories
-            end
-        end
-    end
-
-    -- Now remove the empty directory
-    local success = os.remove(dir)
-    if success then
-        logger.info("Successfully removed directory:", dir)
-    else
-        logger.warn("Failed to remove directory:", dir)
-    end
-    return success
-end
-
---[[--
-Checks if a corresponding book file exists for a given sidecar directory (doc mode).
-
-For a sidecar path like `/path/to/book.pdf.sdr`, this function checks if a file
-named `book.pdf` (or with any other supported extension) exists in the same directory.
-
-@string sdr_path full path to the sidecar directory (must end with .sdr)
-@treturn bool true if a corresponding book file was found, false otherwise
-]]
-local function hasCorrespondingBook(sdr_path)
-    local base_path = sdr_path:gsub(CONFIG.SIDECAR_SUFFIX .. "$", "")
-    local dir_path = base_path:match("(.*/)") or "./"
-    local sdr_base_name = base_path:match("([^/]+)$")
-
-    -- Build list of all supported file extensions
+local function createDocModeChecker()
     local supported_extensions = {}
-    local ext_map = DocumentRegistry:getExtensions()
-    for ext, _ in pairs(ext_map) do
-        table.insert(supported_extensions, "." .. ext)
+    for ext, _ in pairs(DocumentRegistry:getExtensions()) do
+        supported_extensions["." .. ext] = true
     end
-    -- Add compound extensions (e.g., .kepub.epub)
-    table.insert(supported_extensions, ".kepub.epub")
+    logger.dbg("CleanOrphanedSDR: doc mode checker initialized with supported extensions from DocumentRegistry")
 
-    -- Search for matching book file
-    for entry in lfs.dir(dir_path) do
-        if entry ~= "." and entry ~= ".." then
-            local full_path = dir_path .. entry
-            local mode = lfs.attributes(full_path, "mode")
+    return function(sdr_full_path)
+        local base_path = sdr_full_path:gsub(CONFIG.SIDECAR_SUFFIX .. "$", "")
+        local dir_path = base_path:match("(.*/)") or "./"
+        local sdr_base_name = base_path:match("([^/]+)$")
 
-            if mode == "file" then
-                -- Check if this file matches the expected book name
-                for _, ext in ipairs(supported_extensions) do
-                    local expected_book_name = sdr_base_name .. ext
-                    if entry == expected_book_name then
+        local ok, iter, dir_obj = pcall(lfs.dir, dir_path)
+        if not ok then
+            logger.warn("Cannot read directory:", dir_path)
+            return true
+        end
+        for entry in iter, dir_obj do
+            if entry ~= "." and entry ~= ".." then
+                local full_path = dir_path .. entry
+                if lfs.attributes(full_path, "mode") == "file" then
+                    local ext = entry:match("^" .. sdr_base_name:gsub("([%.%-%+%[%]%(%)%$%^%%])", "%%%1") .. "(%..+)$")
+                    if ext and supported_extensions[ext] then
                         logger.dbg("Found matching book:", entry, "for SDR:", sdr_base_name)
                         return true
                     end
                 end
             end
         end
-    end
 
-    logger.dbg("No matching book found for SDR:", sdr_base_name)
-    return false
-end
-
---[[--
-Creates a file existence checker for "doc" mode (book folder).
-
-Returns a function that checks if a corresponding book file exists alongside
-the sidecar directory.
-
-@treturn function checker function (sdr_full_path) -> bool
-]]
-local function createDocModeChecker()
-    return function(sdr_full_path)
-        return hasCorrespondingBook(sdr_full_path)
+        logger.dbg("No matching book found for SDR:", sdr_base_name)
+        return false
     end
 end
 
 --[[--
 Creates a file existence checker for "dir" mode (centralized directory).
 
-In dir mode, the directory structure mirrors the original book folder structure.
-For example:
-  - Book: /home/user/Books/fiction/book.pdf
-  - Sidecar: ~/.koreader/docsettings/home/user/Books/fiction/book.pdf.sdr
+In dir mode, the sdr path mirrors the original book path with the last extension
+stripped. For example:
+  - Book: /mnt/onboard/Books/novel.epub
+  - Sidecar: ~/.koreader/docsettings/mnt/onboard/Books/novel.sdr
 
-Returns a function that reconstructs the original file path from the sidecar
-path and checks if it still exists.
+To check if the original book still exists, we strip the docsettings prefix and
+the .sdr suffix to recover the base path, then look for a file with any supported
+extension at that location.
 
 @treturn function checker function (sdr_full_path) -> bool
 ]]
 local function createDirModeChecker()
-    return function(sdr_full_path)
-        -- Reconstruct the original file path by removing .sdr suffix
-        local original_path = sdr_full_path:gsub(CONFIG.SIDECAR_SUFFIX .. "$", "")
+    local doc_settings_dir = DataStorage:getDocSettingsDir()
 
-        -- Check if the original book file still exists
-        local exists = lfs.attributes(original_path, "mode") == "file"
-        if not exists then
-            logger.dbg("Original file not found for dir mode SDR:", sdr_full_path)
+    -- Build supported extension set for O(1) lookup
+    local supported_extensions = {}
+    for ext, _ in pairs(DocumentRegistry:getExtensions()) do
+        supported_extensions["." .. ext] = true
+    end
+    logger.dbg("CleanOrphanedSDR: dir mode checker initialized with supported extensions from DocumentRegistry")
+
+    return function(sdr_full_path)
+        -- Strip the docsettings prefix and .sdr suffix to recover the original base path
+        -- e.g. "~/.koreader/docsettings/mnt/onboard/Books/novel.sdr"
+        --    -> "/mnt/onboard/Books/novel"
+        local base_path = sdr_full_path:gsub(CONFIG.SIDECAR_SUFFIX .. "$", "")
+        base_path = "/" .. base_path:sub(#doc_settings_dir + 2) -- +2 to skip the trailing /
+        logger.dbg("CleanOrphanedSDR: dir mode reconstructed base_path:", base_path)
+
+        -- Extract directory and basename for scanning
+        local dir_path = base_path:match("(.*/)") or "./"
+        local base_name = base_path:match("([^/]+)$")
+        if not base_name then
+            logger.warn("CleanOrphanedSDR: could not extract base name from dir mode SDR:", sdr_full_path)
+            return false
         end
-        return exists
+
+        -- Check if directory exists before scanning
+        if lfs.attributes(dir_path, "mode") ~= "directory" then
+            logger.dbg("Original directory not found for dir mode SDR:", dir_path)
+            return false
+        end
+
+        -- Search for a matching book file with any supported extension
+        local ok, iter, dir_obj = pcall(lfs.dir, dir_path)
+        if not ok then
+            logger.warn("Cannot read directory:", dir_path)
+            return true
+        end
+        for entry in iter, dir_obj do
+            if entry ~= "." and entry ~= ".." then
+                local ext = entry:match("^" .. base_name:gsub("([%.%-%+%[%]%(%)%$%^%%])", "%%%1") .. "(%..+)$")
+                if ext and supported_extensions[ext] then
+                    logger.dbg("Found matching book:", entry, "for dir mode SDR:", sdr_full_path)
+                    return true
+                end
+            end
+        end
+
+        logger.dbg("Original file not found for dir mode SDR:", sdr_full_path)
+        return false
     end
 end
 
 --[[--
 Creates a file existence checker for "hash" mode (hash-based storage).
 
-In hash mode, sidecars are stored by file content hash.  The checker attempts to
-read the stored doc_path from the sidecar's metadata file to determine if the
-original book still exists.
+In hash mode, sidecars are stored by file content hash. The metadata filename
+is `metadata.<ext>.lua` (e.g., `metadata.epub.lua`), not a fixed name.
+The checker scans the sdr directory for any matching metadata file, reads the
+stored doc_path, and verifies the original book still exists.
 
 @treturn function checker function (sdr_full_path) -> bool
 ]]
 local function createHashModeChecker()
     return function(sdr_full_path)
-        -- Try to read doc_path from the metadata file
-        local metadata_file = sdr_full_path ..  "/" .. CONFIG.METADATA_FILENAME
-        local doc_path = nil
-
-        if lfs.attributes(metadata_file, "mode") == "file" then
-            local doc_settings = DocSettings.openSettingsFile(metadata_file)
-            if doc_settings and doc_settings.data then
-                doc_path = doc_settings:readSetting("doc_path")
-            else
-                logger.warn("Failed to read metadata from hash mode SDR:", metadata_file)
-                return false
+        -- Find the metadata file by pattern (metadata.<ext>.lua)
+        local metadata_file = nil
+        local ok, iter, dir_obj = pcall(lfs.dir, sdr_full_path)
+        if not ok then
+            logger.warn("Cannot read hash mode SDR directory:", sdr_full_path)
+            return true
+        end
+        for entry in iter, dir_obj do
+            if entry:match("^metadata%..+%.lua$") then
+                metadata_file = sdr_full_path .. "/" .. entry
+                break
             end
-        else
-            logger.warn("Metadata file not found in hash mode SDR:", sdr_full_path)
+        end
+
+        if not metadata_file then
+            logger.warn("No metadata file found in hash mode SDR:", sdr_full_path)
             return false
         end
 
+        local ok, doc_settings = pcall(DocSettings.openSettingsFile, metadata_file)
+        if not ok or not doc_settings or not doc_settings.data then
+            -- Unreadable metadata -- skip deletion to be safe
+            logger.warn("Failed to read metadata from hash mode SDR:", metadata_file)
+            return true
+        end
+
+        local doc_path = doc_settings:readSetting("doc_path")
+
         -- Check if the document file still exists
         local exists = doc_path and lfs.attributes(doc_path, "mode") == "file"
-        if not exists then
-            logger.dbg("Document file not found for hash mode SDR.  doc_path:", doc_path)
+        if exists then
+            logger.dbg("CleanOrphanedSDR: hash mode book found at:", doc_path)
+        else
+            logger.dbg("Document file not found for hash mode SDR. doc_path:", doc_path)
         end
         return exists
     end
@@ -240,7 +232,12 @@ modes, but delegates file existence checks to a mode-specific checker function.
 local function scanAndCleanOrphanedSdrs(dir, existence_checker, cleaned_count)
     cleaned_count = cleaned_count or 0
 
-    for entry in lfs.dir(dir) do
+    local ok, iter, dir_obj = pcall(lfs.dir, dir)
+    if not ok then
+        logger.warn("Cannot read directory, skipping:", dir)
+        return cleaned_count
+    end
+    for entry in iter, dir_obj do
         if entry ~= "." and entry ~= ".." then
             local full_path = dir .. "/" .. entry
             local mode = lfs.attributes(full_path, "mode")
@@ -250,8 +247,12 @@ local function scanAndCleanOrphanedSdrs(dir, existence_checker, cleaned_count)
                     -- Found a .sdr folder, check if it's orphaned
                     if not existence_checker(full_path) then
                         logger.info("Cleaning orphaned SDR folder:", full_path)
-                        safeRemoveSidecarDir(full_path)
-                        cleaned_count = cleaned_count + 1
+                        local purge_ok = pcall(util.purgeDir, full_path)
+                        if purge_ok then
+                            cleaned_count = cleaned_count + 1
+                        else
+                            logger.warn("Failed to remove orphaned SDR folder:", full_path)
+                        end
                     end
                 else
                     -- Recurse into subdirectories
@@ -283,14 +284,14 @@ local MODES = {
         checker = createDocModeChecker,
     },
     dir = {
-        name = METADATA_FOLDER_STR["dir"],
+        name = _("settings folder"),
         getDir = function()
             return DataStorage:getDocSettingsDir()
         end,
         checker = createDirModeChecker,
     },
     hash = {
-        name = METADATA_FOLDER_STR["hash"],
+        name = _("hash folder"),
         getDir = function()
             return DataStorage:getDocSettingsHashDir()
         end,
@@ -310,6 +311,7 @@ Displays user-friendly messages about the cleanup results.
 local function cleanupOrphanedSdrFolders()
     -- Determine the current metadata storage mode
     local preferred_location = G_reader_settings:readSetting("document_metadata_folder", "doc")
+    logger.info("CleanOrphanedSDR: detected metadata storage mode:", preferred_location)
 
     -- Look up mode configuration
     local mode_config = MODES[preferred_location]
@@ -359,5 +361,6 @@ local function cleanupOrphanedSdrFolders()
     end
 end
 
--- Execute the cleanup on patch load
-cleanupOrphanedSdrFolders()
+-- Defer cleanup to avoid blocking startup
+UIManager:scheduleIn(1, cleanupOrphanedSdrFolders)
+logger.info("CleanOrphanedSDR patch loaded, cleanup scheduled in 1 second")
