@@ -5,6 +5,8 @@ local BookList = require("ui/widget/booklist")
 local ffiUtil = require("ffi/util")
 local _ = require("gettext")
 
+local function nilIfEmpty(s) return (s and s ~= "") and s or nil end
+
 -- Reorders "First Last" -> "Last, First" for last_first sort mode.
 -- Limitations: Assumes the final word is the surname. This fails for
 -- compound surnames (e.g., "Gabriel Garcia Marquez"), suffixes ("Jr.", "III"),
@@ -49,10 +51,10 @@ local function prepareItem(item, ui, sort_type)
     if not ok or not doc_props then
         doc_props = { display_title = item.text }
     end
-    doc_props.authors = doc_props.authors or "\u{FFFF}"
-    doc_props.series = doc_props.series or "\u{FFFF}"
-    doc_props.display_title = doc_props.display_title or item.text
-    doc_props.pubdate = doc_props.pubdate or "\u{FFFF}"
+    doc_props.authors = nilIfEmpty(doc_props.authors) or "\u{FFFF}"
+    doc_props.series = nilIfEmpty(doc_props.series) or "\u{FFFF}"
+    doc_props.display_title = nilIfEmpty(doc_props.display_title) or item.text
+    doc_props.pubdate = nilIfEmpty(doc_props.pubdate) or "\u{FFFF}"
     item.doc_props = doc_props
     item.author_sort_key = processAuthorName(doc_props.authors, sort_type)
 end
