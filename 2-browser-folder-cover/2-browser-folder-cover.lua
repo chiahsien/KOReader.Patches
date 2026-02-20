@@ -6,6 +6,8 @@ local Device = require("device")
 local FileChooser = require("ui/widget/filechooser")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
 local ImageWidget = require("ui/widget/imagewidget")
 local OverlapGroup = require("ui/widget/overlapgroup")
 local Size = require("ui/size")
@@ -120,6 +122,9 @@ local Folder = {
         alpha = 0.75,
         dir_max_font_size = 25,
     },
+    grid = {
+        gap = Screen:scaleBySize(2),
+    },
 }
 
 -- Recursively search subfolders for a book with a valid cover
@@ -180,11 +185,39 @@ local function patchCoverBrowser(plugin)
     local show_folder_name = BooleanSetting(_("Show folder name"), "folder_name_show", true)
     local settings = { crop_to_fit, show_folder_name }
 
+    local COVER_MODE = { SINGLE = "single", GRID = "grid" }
+    local function getCoverMode()
+        return BookInfoManager:getSetting("folder_cover_mode") or COVER_MODE.SINGLE
+    end
+
     -- cover item
     -- Directories skip original_update() to avoid the e-ink flash caused by painting
     -- the default rounded-box tile first, then replacing it with the cover widget.
     -- Instead, we find and set the cover directly, falling back to original_update()
     -- only when no cover is available.
+    --
+    -- In grid mode, collects up to 4 book covers and dispatches to _setFolderCoverGrid.
+    -- A single cover in grid mode falls back to _setFolderCover (full-size display).
+
+    local function hasValidCover(bookinfo, cover_specs)
+        return bookinfo
+            and bookinfo.cover_bb
+            and bookinfo.has_cover
+            and bookinfo.cover_fetched
+            and not bookinfo.ignore_cover
+            and not BookInfoManager.isCachedCoverInvalid(bookinfo, cover_specs)
+    end
+
+    local function setCoverFromList(item, covers)
+        if #covers == 0 then return false end
+        if #covers == 1 or getCoverMode() == COVER_MODE.SINGLE then
+            item:_setFolderCover(covers[1])
+        else
+            item:_setFolderCoverGrid(covers)
+        end
+        return true
+    end
+
     function MosaicMenuItem:update(...)
         if not self.entry
            or self.entry.is_file or self.entry.file or not self.mandatory
@@ -204,7 +237,8 @@ local function patchCoverBrowser(plugin)
             max_cover_h = self.height - 2 * border_size,
         }
 
-        local cover_file = findCover(dir_path) -- custom .cover file
+        -- Custom .cover file always displays as single cover regardless of mode
+        local cover_file = findCover(dir_path)
         if cover_file then
             local tmp_img = ImageWidget:new { file = cover_file, scale_factor = 1 }
             local success, w, h = pcall(function()
@@ -220,14 +254,26 @@ local function patchCoverBrowser(plugin)
             end
         end
 
-        -- check cover source cache: skip expensive directory scan on hit
-        local cached_book_path = cover_source_cache[dir_path]
-        if cached_book_path then
-            local bookinfo = BookInfoManager:getBookInfo(cached_book_path, true)
-            if bookinfo and bookinfo.cover_bb and bookinfo.has_cover and bookinfo.cover_fetched
-               and not bookinfo.ignore_cover
-               and not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs) then
-                self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
+        local cover_mode = getCoverMode()
+        local max_covers = cover_mode == COVER_MODE.GRID and 4 or 1
+
+        -- Check cover source cache: skip expensive directory scan on hit.
+        -- In grid mode the cache stores an array of book paths.
+        local cached = cover_source_cache[dir_path]
+        if cached then
+            local cached_paths = type(cached) == "table" and cached or { cached }
+            local covers = {}
+            local cache_valid = true
+            for _, book_path in ipairs(cached_paths) do
+                local bookinfo = BookInfoManager:getBookInfo(book_path, true)
+                if hasValidCover(bookinfo, self.menu.cover_specs) then
+                    table.insert(covers, { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h })
+                else
+                    cache_valid = false
+                    break
+                end
+            end
+            if cache_valid and setCoverFromList(self, covers) then
                 self._foldercover_version = settings_version
                 self.bookinfo_found = true
                 return
@@ -242,46 +288,41 @@ local function patchCoverBrowser(plugin)
             return original_update(self, ...)
         end
 
-        local found_book = false
+        local covers = {}
+        local cover_paths = {}
         local has_pending_covers = false
         for _, entry in ipairs(entries) do
             if entry.is_file or entry.file then
                 local bookinfo = BookInfoManager:getBookInfo(entry.path, true)
-                if
-                    bookinfo
-                    and bookinfo.cover_bb
-                    and bookinfo.has_cover
-                    and bookinfo.cover_fetched
-                    and not bookinfo.ignore_cover
-                    and not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs)
-                then
-                    self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
-                    cover_source_cache[dir_path] = entry.path
-                    found_book = true
-                    break
+                if hasValidCover(bookinfo, self.menu.cover_specs) then
+                    table.insert(covers, { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h })
+                    table.insert(cover_paths, entry.path)
+                    if #covers >= max_covers then break end
                 elseif not bookinfo or not bookinfo.cover_fetched then
                     has_pending_covers = true
                 end
             end
         end
 
-        if not found_book then
+        -- If we still need more covers, recurse into subfolders
+        if #covers < max_covers then
             for _, entry in ipairs(entries) do
                 if not (entry.is_file or entry.file) then
                     local book_entry, bookinfo = findBookInSubfolders(self.menu, entry.path, 3, BookInfoManager)
                     if book_entry and bookinfo then
                         if not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs) then
-                            self:_setFolderCover { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h }
-                            cover_source_cache[dir_path] = book_entry.path
-                            found_book = true
-                            break
+                            table.insert(covers, { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h })
+                            table.insert(cover_paths, book_entry.path)
+                            if #covers >= max_covers then break end
                         end
                     end
                 end
             end
         end
 
-        if found_book then
+        if setCoverFromList(self, covers) then
+            -- Cache the source paths (single string for single mode, array for grid)
+            cover_source_cache[dir_path] = #cover_paths == 1 and cover_paths[1] or cover_paths
             self._foldercover_version = settings_version
             self.bookinfo_found = true
             self._foldercover_queued = false
@@ -367,6 +408,95 @@ local function patchCoverBrowser(plugin)
         end
     end
 
+    function MosaicMenuItem:_setFolderCoverGrid(covers)
+        local border = Folder.face.border_size
+        local gap = Folder.grid.gap
+        local target_w = self.width - 2 * border
+        local target_h = self.height - 2 * border
+        local cell_w = math.floor((target_w - gap) / 2)
+        local cell_h = math.floor((target_h - gap) / 2)
+
+        local function makeCell(img)
+            local scale = math.min(cell_w / img.w, cell_h / img.h)
+            local image = ImageWidget:new { image = img.data, scale_factor = scale }
+            return CenterContainer:new {
+                dimen = { w = cell_w, h = cell_h },
+                image,
+            }
+        end
+
+        -- Layout: 2 covers → top row; 3 → top row + bottom-left; 4 → full 2×2
+        local top_row = HorizontalGroup:new {}
+        top_row[1] = makeCell(covers[1])
+        if covers[2] then
+            top_row[2] = HorizontalSpan:new { width = gap }
+            top_row[3] = makeCell(covers[2])
+        end
+
+        local grid = VerticalGroup:new {}
+        grid[1] = top_row
+
+        if covers[3] then
+            grid[2] = VerticalSpan:new { width = gap }
+            local bottom_row = HorizontalGroup:new {}
+            bottom_row[1] = makeCell(covers[3])
+            if covers[4] then
+                bottom_row[2] = HorizontalSpan:new { width = gap }
+                bottom_row[3] = makeCell(covers[4])
+            end
+            grid[3] = bottom_row
+        end
+
+        local grid_widget = FrameContainer:new {
+            padding = 0,
+            bordersize = border,
+            grid,
+            overlap_align = "center",
+        }
+
+        local grid_size = grid_widget:getSize()
+        local dimen = { w = grid_size.w, h = grid_size.h }
+
+        local directory = self:_getTextBoxes { w = dimen.w - 2 * border, h = dimen.h - 2 * border }
+
+        local folder_name_widget
+        if show_folder_name.get() then
+            folder_name_widget = BottomContainer:new {
+                dimen = dimen,
+                FrameContainer:new {
+                    padding = 0,
+                    bordersize = border,
+                    AlphaContainer:new { alpha = Folder.face.alpha, directory },
+                },
+                overlap_align = "center",
+            }
+        else
+            directory:free()
+            folder_name_widget = VerticalSpan:new { width = 0 }
+        end
+
+        local widget = CenterContainer:new {
+            dimen = { w = self.width, h = self.height },
+            VerticalGroup:new {
+                VerticalSpan:new { width = math.max(0, self.height - dimen.h) },
+                OverlapGroup:new {
+                    dimen = { w = self.width, h = dimen.h },
+                    grid_widget,
+                    folder_name_widget,
+                },
+            },
+        }
+
+        if self._underline_container and self._underline_container[1] then
+            local previous_widget = self._underline_container[1]
+            previous_widget:free()
+        end
+
+        if self._underline_container then
+            self._underline_container[1] = widget
+        end
+    end
+
     function MosaicMenuItem:_getTextBoxes(dimen)
         local text = self.text
         if text:match("/$") then text = text:sub(1, -2) end -- remove "/"
@@ -413,29 +543,58 @@ local function patchCoverBrowser(plugin)
         if menu_items.filebrowser_settings == nil then return end
 
         local item = getMenuItem(menu_items.filebrowser_settings, _("Mosaic and detailed list settings"))
-        if item then
-            item.sub_item_table[#item.sub_item_table].separator = true
-            for __, setting in ipairs(settings) do
-                if
-                    not getMenuItem( -- already exists ?
-                        menu_items.filebrowser_settings,
-                        _("Mosaic and detailed list settings"),
-                        setting.text
-                    )
-                then
-                    table.insert(item.sub_item_table, {
-                        text = setting.text,
-                        checked_func = function() return setting.get() end,
+        if not item then return end
+
+        local function invalidateAndRefresh()
+            settings_version = settings_version + 1
+            cached_list = {}
+            cached_list_order = {}
+            cover_source_cache = {}
+            self.ui.file_chooser:updateItems()
+        end
+
+        item.sub_item_table[#item.sub_item_table].separator = true
+
+        if not getMenuItem(menu_items.filebrowser_settings, _("Mosaic and detailed list settings"), _("Folder cover style")) then
+            table.insert(item.sub_item_table, {
+                text = _("Folder cover style"),
+                sub_item_table = {
+                    {
+                        text = _("Single cover"),
+                        checked_func = function() return getCoverMode() == COVER_MODE.SINGLE end,
                         callback = function()
-                            setting.toggle()
-                            settings_version = settings_version + 1
-                            cached_list = {}
-                            cached_list_order = {}
-                            cover_source_cache = {}
-                            self.ui.file_chooser:updateItems()
+                            BookInfoManager:saveSetting("folder_cover_mode", COVER_MODE.SINGLE)
+                            invalidateAndRefresh()
                         end,
-                    })
-                end
+                    },
+                    {
+                        text = _("Grid (2×2)"),
+                        checked_func = function() return getCoverMode() == COVER_MODE.GRID end,
+                        callback = function()
+                            BookInfoManager:saveSetting("folder_cover_mode", COVER_MODE.GRID)
+                            invalidateAndRefresh()
+                        end,
+                    },
+                },
+            })
+        end
+
+        for __, setting in ipairs(settings) do
+            if
+                not getMenuItem(
+                    menu_items.filebrowser_settings,
+                    _("Mosaic and detailed list settings"),
+                    setting.text
+                )
+            then
+                table.insert(item.sub_item_table, {
+                    text = setting.text,
+                    checked_func = function() return setting.get() end,
+                    callback = function()
+                        setting.toggle()
+                        invalidateAndRefresh()
+                    end,
+                })
             end
         end
     end
