@@ -189,15 +189,28 @@ local function patchCoverBrowser(plugin)
     local settings = { crop_to_fit, show_folder_name }
 
     -- cover item
+    -- Directories skip original_update() to avoid the e-ink flash caused by painting
+    -- the default rounded-box tile first, then replacing it with the cover widget.
+    -- Instead, we find and set the cover directly, falling back to original_update()
+    -- only when no cover is available.
     function MosaicMenuItem:update(...)
-        original_update(self, ...)
-        if self.menu.no_refresh_covers or not self.do_cover_image then return end
+        if not self.entry
+           or self.entry.is_file or self.entry.file or not self.mandatory
+           or self.menu.no_refresh_covers or not self.do_cover_image then
+            return original_update(self, ...)
+        end
+
+        local dir_path = self.entry.path
+        if not dir_path then return original_update(self, ...) end
+
         if self._foldercover_version == settings_version then return end
 
-        if not self.entry then return end
-        if self.entry.is_file or self.entry.file or not self.mandatory then return end -- it's a file
-        local dir_path = self.entry.path
-        if not dir_path then return end
+        self.is_directory = true
+        local border_size = Size.border.thin
+        self.menu.cover_specs = {
+            max_cover_w = self.width - 2 * border_size,
+            max_cover_h = self.height - 2 * border_size,
+        }
 
         local cover_file = findCover(dir_path) -- custom .cover file
         if cover_file then
@@ -233,7 +246,9 @@ local function patchCoverBrowser(plugin)
         self.menu._dummy = true
         local ok, entries = pcall(self.menu.genItemTableFromPath, self.menu, dir_path)
         self.menu._dummy = false
-        if not ok or not entries then return end
+        if not ok or not entries then
+            return original_update(self, ...)
+        end
 
         local found_book = false
         local has_pending_covers = false
@@ -279,12 +294,16 @@ local function patchCoverBrowser(plugin)
             self.bookinfo_found = true
             self._foldercover_queued = false
         elseif has_pending_covers and self.menu.items_to_update then
+            -- No cover yet but extraction is pending; show default tile while waiting
+            original_update(self, ...)
             if not self._foldercover_queued then
                 self.bookinfo_found = false
                 self._foldercover_queued = true
                 table.insert(self.menu.items_to_update, self)
             end
         else
+            -- No cover available at all; fall back to default directory widget
+            original_update(self, ...)
             self._foldercover_version = settings_version
         end
     end
