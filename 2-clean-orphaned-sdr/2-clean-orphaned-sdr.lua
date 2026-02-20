@@ -53,6 +53,7 @@ local function getHomeDirectory()
     if not home_dir or lfs.attributes(home_dir, "mode") ~= "directory" then
         home_dir = Device.home_dir or lfs.currentdir()
     end
+    logger.dbg("CleanOrphanedSDR: resolved home directory:", home_dir)
     return home_dir
 end
 
@@ -69,6 +70,7 @@ local function createDocModeChecker()
     for ext, _ in pairs(DocumentRegistry:getExtensions()) do
         supported_extensions["." .. ext] = true
     end
+    logger.dbg("CleanOrphanedSDR: doc mode checker initialized with supported extensions from DocumentRegistry")
 
     return function(sdr_full_path)
         local base_path = sdr_full_path:gsub(CONFIG.SIDECAR_SUFFIX .. "$", "")
@@ -120,6 +122,7 @@ local function createDirModeChecker()
     for ext, _ in pairs(DocumentRegistry:getExtensions()) do
         supported_extensions["." .. ext] = true
     end
+    logger.dbg("CleanOrphanedSDR: dir mode checker initialized with supported extensions from DocumentRegistry")
 
     return function(sdr_full_path)
         -- Strip the docsettings prefix and .sdr suffix to recover the original base path
@@ -127,12 +130,13 @@ local function createDirModeChecker()
         --    -> "/mnt/onboard/Books/novel"
         local base_path = sdr_full_path:gsub(CONFIG.SIDECAR_SUFFIX .. "$", "")
         base_path = "/" .. base_path:sub(#doc_settings_dir + 2) -- +2 to skip the trailing /
+        logger.dbg("CleanOrphanedSDR: dir mode reconstructed base_path:", base_path)
 
         -- Extract directory and basename for scanning
         local dir_path = base_path:match("(.*/)") or "./"
         local base_name = base_path:match("([^/]+)$")
         if not base_name then
-            logger.dbg("Could not extract base name from dir mode SDR:", sdr_full_path)
+            logger.warn("CleanOrphanedSDR: could not extract base name from dir mode SDR:", sdr_full_path)
             return false
         end
 
@@ -205,7 +209,9 @@ local function createHashModeChecker()
 
         -- Check if the document file still exists
         local exists = doc_path and lfs.attributes(doc_path, "mode") == "file"
-        if not exists then
+        if exists then
+            logger.dbg("CleanOrphanedSDR: hash mode book found at:", doc_path)
+        else
             logger.dbg("Document file not found for hash mode SDR. doc_path:", doc_path)
         end
         return exists
@@ -305,6 +311,7 @@ Displays user-friendly messages about the cleanup results.
 local function cleanupOrphanedSdrFolders()
     -- Determine the current metadata storage mode
     local preferred_location = G_reader_settings:readSetting("document_metadata_folder", "doc")
+    logger.info("CleanOrphanedSDR: detected metadata storage mode:", preferred_location)
 
     -- Look up mode configuration
     local mode_config = MODES[preferred_location]
@@ -356,3 +363,4 @@ end
 
 -- Defer cleanup to avoid blocking startup
 UIManager:scheduleIn(1, cleanupOrphanedSdrFolders)
+logger.info("CleanOrphanedSDR patch loaded, cleanup scheduled in 1 second")
