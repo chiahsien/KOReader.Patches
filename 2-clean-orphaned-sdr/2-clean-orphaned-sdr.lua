@@ -127,27 +127,60 @@ end
 --[[--
 Creates a file existence checker for "dir" mode (centralized directory).
 
-In dir mode, the directory structure mirrors the original book folder structure.
-For example:
-  - Book: /home/user/Books/fiction/book.pdf
-  - Sidecar: ~/.koreader/docsettings/home/user/Books/fiction/book.pdf.sdr
+In dir mode, the sdr path mirrors the original book path with the last extension
+stripped. For example:
+  - Book: /mnt/onboard/Books/novel.epub
+  - Sidecar: ~/.koreader/docsettings/mnt/onboard/Books/novel.sdr
 
-Returns a function that reconstructs the original file path from the sidecar
-path and checks if it still exists.
+To check if the original book still exists, we strip the docsettings prefix and
+the .sdr suffix to recover the base path, then look for a file with any supported
+extension at that location.
 
 @treturn function checker function (sdr_full_path) -> bool
 ]]
 local function createDirModeChecker()
-    return function(sdr_full_path)
-        -- Reconstruct the original file path by removing .sdr suffix
-        local original_path = sdr_full_path:gsub(CONFIG.SIDECAR_SUFFIX .. "$", "")
+    local doc_settings_dir = DataStorage:getDocSettingsDir()
 
-        -- Check if the original book file still exists
-        local exists = lfs.attributes(original_path, "mode") == "file"
-        if not exists then
-            logger.dbg("Original file not found for dir mode SDR:", sdr_full_path)
+    -- Build supported extension set for O(1) lookup
+    local supported_extensions = {}
+    for ext, _ in pairs(DocumentRegistry:getExtensions()) do
+        supported_extensions["." .. ext] = true
+    end
+
+    return function(sdr_full_path)
+        -- Strip the docsettings prefix and .sdr suffix to recover the original base path
+        -- e.g. "~/.koreader/docsettings/mnt/onboard/Books/novel.sdr"
+        --    -> "/mnt/onboard/Books/novel"
+        local base_path = sdr_full_path:gsub(CONFIG.SIDECAR_SUFFIX .. "$", "")
+        base_path = "/" .. base_path:sub(#doc_settings_dir + 2) -- +2 to skip the trailing /
+
+        -- Extract directory and basename for scanning
+        local dir_path = base_path:match("(.*/)") or "./"
+        local base_name = base_path:match("([^/]+)$")
+        if not base_name then
+            logger.dbg("Could not extract base name from dir mode SDR:", sdr_full_path)
+            return false
         end
-        return exists
+
+        -- Check if directory exists before scanning
+        if lfs.attributes(dir_path, "mode") ~= "directory" then
+            logger.dbg("Original directory not found for dir mode SDR:", dir_path)
+            return false
+        end
+
+        -- Search for a matching book file with any supported extension
+        for entry in lfs.dir(dir_path) do
+            if entry ~= "." and entry ~= ".." then
+                local ext = entry:match("^" .. base_name:gsub("([%.%-%+%[%]%(%)%$%^%%])", "%%%1") .. "(%..+)$")
+                if ext and supported_extensions[ext] then
+                    logger.dbg("Found matching book:", entry, "for dir mode SDR:", sdr_full_path)
+                    return true
+                end
+            end
+        end
+
+        logger.dbg("Original file not found for dir mode SDR:", sdr_full_path)
+        return false
     end
 end
 
