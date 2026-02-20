@@ -5,34 +5,17 @@ local BookList = require("ui/widget/booklist")
 local ffiUtil = require("ffi/util")
 local _ = require("gettext")
 
-local function prepareItem(item, ui)
-    if not ui or not ui.bookinfo then
-        item.doc_props = {
-            authors = "\u{FFFF}",
-            series = "\u{FFFF}",
-            display_title = item.text,
-            pubdate = "\u{FFFF}"
-        }
-        return
-    end
-
-    local ok, doc_props = pcall(ui.bookinfo.getDocProps, ui.bookinfo, item.path or item.file)
-    if not ok or not doc_props then
-        doc_props = { display_title = item.text }
-    end
-    doc_props.authors = doc_props.authors or "\u{FFFF}"
-    doc_props.series = doc_props.series or "\u{FFFF}"
-    doc_props.display_title = doc_props.display_title or item.text
-    doc_props.pubdate = doc_props.pubdate or "\u{FFFF}"
-    item.doc_props = doc_props
-end
-
+-- Reorders "First Last" -> "Last, First" for last_first sort mode.
+-- Limitations: Assumes the final word is the surname. This fails for
+-- compound surnames (e.g., "Gabriel Garcia Marquez"), suffixes ("Jr.", "III"),
+-- and name orders where family name comes first (e.g., Chinese, Japanese, Korean).
+-- Names already containing a comma are left unchanged.
 local function processAuthorName(author_name, sort_type)
     if not author_name or author_name == "\u{FFFF}" then
         return author_name
     end
 
-    if sort_type == "last_first" then
+    if sort_type == "last_first" and not author_name:find(",") then
         local words = {}
         for word in author_name:gmatch("%S+") do
             table.insert(words, word)
@@ -50,47 +33,77 @@ local function processAuthorName(author_name, sort_type)
     return author_name
 end
 
-local function formatInfo(item, sort_type)
-    local info = ""
-    if not item.doc_props then
-        return info
+local function prepareItem(item, ui, sort_type)
+    if not ui or not ui.bookinfo then
+        item.doc_props = {
+            authors = "\u{FFFF}",
+            series = "\u{FFFF}",
+            display_title = item.text,
+            pubdate = "\u{FFFF}"
+        }
+        item.author_sort_key = "\u{FFFF}"
+        return
     end
 
+    local ok, doc_props = pcall(ui.bookinfo.getDocProps, ui.bookinfo, item.path or item.file)
+    if not ok or not doc_props then
+        doc_props = { display_title = item.text }
+    end
+    doc_props.authors = doc_props.authors or "\u{FFFF}"
+    doc_props.series = doc_props.series or "\u{FFFF}"
+    doc_props.display_title = doc_props.display_title or item.text
+    doc_props.pubdate = doc_props.pubdate or "\u{FFFF}"
+    item.doc_props = doc_props
+    item.author_sort_key = processAuthorName(doc_props.authors, sort_type)
+end
+
+local function formatInfo(item, sort_type)
+    if not item.doc_props then
+        return ""
+    end
+
+    local parts = {}
+
     if item.doc_props.authors and item.doc_props.authors ~= "\u{FFFF}" then
-        local formatted_author = processAuthorName(item.doc_props.authors, sort_type)
-        info = info .. formatted_author
+        table.insert(parts, processAuthorName(item.doc_props.authors, sort_type))
     end
 
     if item.doc_props.series and item.doc_props.series ~= "\u{FFFF}" then
         if item.doc_props.series_index then
-            info = info .. " • " .. item.doc_props.series .. " #" .. item.doc_props.series_index
+            table.insert(parts, item.doc_props.series .. " #" .. item.doc_props.series_index)
         else
-            info = info .. " • " .. item.doc_props.series
+            table.insert(parts, item.doc_props.series)
         end
     end
 
     if item.doc_props.pubdate and item.doc_props.pubdate ~= "\u{FFFF}" then
-        info = info .. " • " .. item.doc_props.pubdate
+        table.insert(parts, item.doc_props.pubdate)
     end
 
-    return info
+    return table.concat(parts, " \u{2022} ")
 end
 
-local function compareAuthorSeries(a, b, author_sort_type)
-    local author_a = processAuthorName(a.doc_props.authors, author_sort_type)
-    local author_b = processAuthorName(b.doc_props.authors, author_sort_type)
-
-    if author_a ~= author_b then
-        return ffiUtil.strcoll(author_a, author_b)
+local function compareAuthorSeries(a, b)
+    if a.author_sort_key ~= b.author_sort_key then
+        return ffiUtil.strcoll(a.author_sort_key, b.author_sort_key)
     end
 
     if a.doc_props.series ~= b.doc_props.series then
         return ffiUtil.strcoll(a.doc_props.series, b.doc_props.series)
     end
 
-    if a.doc_props.series_index and b.doc_props.series_index and
-       a.doc_props.series ~= "\u{FFFF}" then
-        return a.doc_props.series_index < b.doc_props.series_index
+    if a.doc_props.series ~= "\u{FFFF}" then
+        local has_idx_a = a.doc_props.series_index ~= nil
+        local has_idx_b = b.doc_props.series_index ~= nil
+        if has_idx_a and has_idx_b then
+            local idx_a = tonumber(a.doc_props.series_index) or 0
+            local idx_b = tonumber(b.doc_props.series_index) or 0
+            if idx_a ~= idx_b then
+                return idx_a < idx_b
+            end
+        elseif has_idx_a ~= has_idx_b then
+            return has_idx_a
+        end
     end
 
     return nil
@@ -103,111 +116,45 @@ local CustomSorting = {
     compareAuthorSeries = compareAuthorSeries,
 }
 
--- Sorting options
-BookList.collates.author_first_last_series_title = {
-    text = _("author (first name) - series - title"),
-    menu_order = 5,
-    can_collate_mixed = false,
+local function makeCollate(text, menu_order, sort_type, fallback_field)
+    return {
+        text = text,
+        menu_order = menu_order,
+        can_collate_mixed = false,
 
-    item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui)
-    end,
+        item_func = function(item, ui)
+            CustomSorting.prepareItem(item, ui, sort_type)
+        end,
 
-    init_sort_func = function(cache)
-        local my_cache = cache or {}
-        return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b, "first_last")
-            if result ~= nil then
-                return result
+        init_sort_func = function()
+            return function(a, b)
+                local result = CustomSorting.compareAuthorSeries(a, b)
+                if result ~= nil then
+                    return result
+                end
+                if fallback_field == "pubdate" and a.doc_props.pubdate ~= b.doc_props.pubdate then
+                    return ffiUtil.strcoll(a.doc_props.pubdate, b.doc_props.pubdate)
+                end
+                return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
             end
-            return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end, my_cache
-    end,
+        end,
 
-    mandatory_func = function(item)
-        return CustomSorting.formatInfo(item, "first_last")
-    end,
-}
+        mandatory_func = function(item)
+            return CustomSorting.formatInfo(item, sort_type)
+        end,
+    }
+end
 
-BookList.collates.author_last_first_series_title = {
-    text = _("author (last name) - series - title"),
-    menu_order = 6,
-    can_collate_mixed = false,
+BookList.collates.author_first_last_series_title = makeCollate(
+    _("author (first name) - series - title"), 5, "first_last", "title")
 
-    item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui)
-    end,
+BookList.collates.author_last_first_series_title = makeCollate(
+    _("author (last name) - series - title"), 6, "last_first", "title")
 
-    init_sort_func = function(cache)
-        local my_cache = cache or {}
-        return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b, "last_first")
-            if result ~= nil then
-                return result
-            end
-            return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end, my_cache
-    end,
+BookList.collates.author_first_last_series_date = makeCollate(
+    _("author (first name) - series - published date"), 7, "first_last", "pubdate")
 
-    mandatory_func = function(item)
-        return CustomSorting.formatInfo(item, "last_first")
-    end,
-}
-
-BookList.collates.author_first_last_series_date = {
-    text = _("author (first name) - series - published date"),
-    menu_order = 7,
-    can_collate_mixed = false,
-
-    item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui)
-    end,
-
-    init_sort_func = function(cache)
-        local my_cache = cache or {}
-        return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b, "first_last")
-            if result ~= nil then
-                return result
-            end
-            if a.doc_props.pubdate ~= b.doc_props.pubdate then
-                return ffiUtil.strcoll(a.doc_props.pubdate, b.doc_props.pubdate)
-            end
-            return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end, my_cache
-    end,
-
-    mandatory_func = function(item)
-        return CustomSorting.formatInfo(item, "first_last")
-    end,
-}
-
-BookList.collates.author_last_first_series_date = {
-    text = _("author (last name) - series - published date"),
-    menu_order = 8,
-    can_collate_mixed = false,
-
-    item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui)
-    end,
-
-    init_sort_func = function(cache)
-        local my_cache = cache or {}
-        return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b, "last_first")
-            if result ~= nil then
-                return result
-            end
-            if a.doc_props.pubdate ~= b.doc_props.pubdate then
-                return ffiUtil.strcoll(a.doc_props.pubdate, b.doc_props.pubdate)
-            end
-            return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end, my_cache
-    end,
-
-    mandatory_func = function(item)
-        return CustomSorting.formatInfo(item, "last_first")
-    end,
-}
+BookList.collates.author_last_first_series_date = makeCollate(
+    _("author (last name) - series - published date"), 8, "last_first", "pubdate")
 
 return BookList.collates
