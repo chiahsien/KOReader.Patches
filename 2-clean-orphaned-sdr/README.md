@@ -66,6 +66,21 @@ KOReader supports three ways to store book metadata. This patch only scans the *
    - Desktop: `~/.koreader/patches/`
 3. **Restart KOReader** -- The patch will automatically execute on startup
 
+## Changing Metadata Storage Mode
+
+This patch cleans orphaned sidecars for the *currently active* mode only. To switch modes in KOReader:
+
+1. Tap the top of the screen to open the **top menu**
+2. Tap the **gear icon** (Settings)
+3. Tap **Document**
+4. Tap **Book metadata location** (shows your current mode)
+5. Select one of the three options:
+   - **book folder** -- Sidecars stored alongside book files (default)
+   - **\<docsettings path\>** -- All sidecars centralized in one directory
+   - **\<hashdocsettings path\>** -- Sidecars identified by file content hash
+
+> **Note**: Switching modes does not migrate or remove sidecars from the previous location. Orphaned sidecars in the old location will not be cleaned until you switch back to that mode.
+
 ## Usage
 
 Once installed, the patch runs automatically:
