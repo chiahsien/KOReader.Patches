@@ -376,8 +376,8 @@ local function patchCoverBrowser(plugin)
             folder_name_widget = BottomContainer:new {
                 dimen = dimen,
                 FrameContainer:new {
-                    padding = 0,
-                    bordersize = Folder.face.border_size,
+                    padding = Folder.face.border_size,
+                    bordersize = 0,
                     AlphaContainer:new { alpha = Folder.face.alpha, directory },
                 },
                 overlap_align = "center",
@@ -469,8 +469,8 @@ local function patchCoverBrowser(plugin)
             folder_name_widget = BottomContainer:new {
                 dimen = dimen,
                 FrameContainer:new {
-                    padding = 0,
-                    bordersize = border,
+                    padding = border,
+                    bordersize = 0,
                     AlphaContainer:new { alpha = Folder.face.alpha, directory },
                 },
                 overlap_align = "center",
