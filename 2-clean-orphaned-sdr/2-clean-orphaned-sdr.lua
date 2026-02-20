@@ -82,8 +82,6 @@ local function hasCorrespondingBook(sdr_path)
     for ext, _ in pairs(ext_map) do
         table.insert(supported_extensions, "." .. ext)
     end
-    -- Add compound extensions (e.g., .kepub.epub)
-    table.insert(supported_extensions, ".kepub.epub")
 
     -- Search for matching book file
     for entry in lfs.dir(dir_path) do
