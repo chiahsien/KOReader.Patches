@@ -5,6 +5,11 @@ local BookList = require("ui/widget/booklist")
 local ffiUtil = require("ffi/util")
 local _ = require("gettext")
 
+-- Reorders "First Last" -> "Last, First" for last_first sort mode.
+-- Limitations: Assumes the final word is the surname. This fails for
+-- compound surnames (e.g., "Gabriel Garcia Marquez"), suffixes ("Jr.", "III"),
+-- and name orders where family name comes first (e.g., Chinese, Japanese, Korean).
+-- Names already containing a comma are left unchanged.
 local function processAuthorName(author_name, sort_type)
     if not author_name or author_name == "\u{FFFF}" then
         return author_name
