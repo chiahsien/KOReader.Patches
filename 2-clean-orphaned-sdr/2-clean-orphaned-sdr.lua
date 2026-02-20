@@ -30,11 +30,9 @@ Configuration constants for sidecar cleanup.
 
 @table CONFIG
 @field SIDECAR_SUFFIX string suffix used for sidecar directories (.sdr)
-@field METADATA_FILENAME string metadata file name (metadata.lua)
 ]]
 local CONFIG = {
     SIDECAR_SUFFIX = ".sdr",
-    METADATA_FILENAME = "metadata.lua",
 }
 
 --[[--
@@ -187,35 +185,42 @@ end
 --[[--
 Creates a file existence checker for "hash" mode (hash-based storage).
 
-In hash mode, sidecars are stored by file content hash.  The checker attempts to
-read the stored doc_path from the sidecar's metadata file to determine if the
-original book still exists.
+In hash mode, sidecars are stored by file content hash. The metadata filename
+is `metadata.<ext>.lua` (e.g., `metadata.epub.lua`), not a fixed name.
+The checker scans the sdr directory for any matching metadata file, reads the
+stored doc_path, and verifies the original book still exists.
 
 @treturn function checker function (sdr_full_path) -> bool
 ]]
 local function createHashModeChecker()
     return function(sdr_full_path)
-        -- Try to read doc_path from the metadata file
-        local metadata_file = sdr_full_path ..  "/" .. CONFIG.METADATA_FILENAME
-        local doc_path = nil
-
-        if lfs.attributes(metadata_file, "mode") == "file" then
-            local doc_settings = DocSettings.openSettingsFile(metadata_file)
-            if doc_settings and doc_settings.data then
-                doc_path = doc_settings:readSetting("doc_path")
-            else
-                logger.warn("Failed to read metadata from hash mode SDR:", metadata_file)
-                return false
+        -- Find the metadata file by pattern (metadata.<ext>.lua)
+        local metadata_file = nil
+        for entry in lfs.dir(sdr_full_path) do
+            if entry:match("^metadata%..+%.lua$") then
+                metadata_file = sdr_full_path .. "/" .. entry
+                break
             end
-        else
-            logger.warn("Metadata file not found in hash mode SDR:", sdr_full_path)
+        end
+
+        if not metadata_file then
+            logger.warn("No metadata file found in hash mode SDR:", sdr_full_path)
             return false
         end
+
+        local ok, doc_settings = pcall(DocSettings.openSettingsFile, metadata_file)
+        if not ok or not doc_settings or not doc_settings.data then
+            -- Unreadable metadata -- skip deletion to be safe
+            logger.warn("Failed to read metadata from hash mode SDR:", metadata_file)
+            return true
+        end
+
+        local doc_path = doc_settings:readSetting("doc_path")
 
         -- Check if the document file still exists
         local exists = doc_path and lfs.attributes(doc_path, "mode") == "file"
         if not exists then
-            logger.dbg("Document file not found for hash mode SDR.  doc_path:", doc_path)
+            logger.dbg("Document file not found for hash mode SDR. doc_path:", doc_path)
         end
         return exists
     end
