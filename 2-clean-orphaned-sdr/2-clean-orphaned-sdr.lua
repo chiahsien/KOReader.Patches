@@ -1,11 +1,16 @@
 --[[--
-User patch to clean up orphaned .sdr (sidecar) folders across all metadata storage modes.
+User patch to clean up orphaned .sdr (sidecar) folders for the active metadata
+storage mode.
 
-This patch scans for and safely removes sidecar folders that no longer have corresponding
-book files.  It supports all three metadata storage modes:
-  - "doc"  : sidecar folders are stored alongside book files
-  - "dir"  : all sidecars are centralized in ~/.koreader/docsettings/
-  - "hash" : sidecars are stored by file hash in ~/.koreader/hashdocsettings/
+On each startup (deferred by 1 second), this patch detects the currently
+configured metadata storage mode and scans the corresponding directory for
+sidecar folders whose book files no longer exist. Orphaned sidecars are
+removed to reclaim storage space.
+
+Supported modes:
+  - "doc"  : sidecar folders stored alongside book files
+  - "dir"  : sidecars centralized in the docsettings directory
+  - "hash" : sidecars stored by file content hash
 
 Execution Priority: 2 (late, after UIManager is ready)
 
@@ -33,17 +38,6 @@ Configuration constants for sidecar cleanup.
 ]]
 local CONFIG = {
     SIDECAR_SUFFIX = ".sdr",
-}
-
---[[--
-Display name mappings for metadata storage modes.
-
-@table METADATA_FOLDER_STR
-]]
-local METADATA_FOLDER_STR = {
-    ["doc"]  = _("book folder"),
-    ["dir"]  = DocSettings.getSidecarStorage("dir"),
-    ["hash"] = DocSettings.getSidecarStorage("hash"),
 }
 
 --[[--
@@ -284,14 +278,14 @@ local MODES = {
         checker = createDocModeChecker,
     },
     dir = {
-        name = METADATA_FOLDER_STR["dir"],
+        name = _("settings folder"),
         getDir = function()
             return DataStorage:getDocSettingsDir()
         end,
         checker = createDirModeChecker,
     },
     hash = {
-        name = METADATA_FOLDER_STR["hash"],
+        name = _("hash folder"),
         getDir = function()
             return DataStorage:getDocSettingsHashDir()
         end,
