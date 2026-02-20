@@ -116,107 +116,45 @@ local CustomSorting = {
     compareAuthorSeries = compareAuthorSeries,
 }
 
--- Sorting options
-BookList.collates.author_first_last_series_title = {
-    text = _("author (first name) - series - title"),
-    menu_order = 5,
-    can_collate_mixed = false,
+local function makeCollate(text, menu_order, sort_type, fallback_field)
+    return {
+        text = text,
+        menu_order = menu_order,
+        can_collate_mixed = false,
 
-    item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui, "first_last")
-    end,
+        item_func = function(item, ui)
+            CustomSorting.prepareItem(item, ui, sort_type)
+        end,
 
-    init_sort_func = function()
-        return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b)
-            if result ~= nil then
-                return result
+        init_sort_func = function()
+            return function(a, b)
+                local result = CustomSorting.compareAuthorSeries(a, b)
+                if result ~= nil then
+                    return result
+                end
+                if fallback_field == "pubdate" and a.doc_props.pubdate ~= b.doc_props.pubdate then
+                    return ffiUtil.strcoll(a.doc_props.pubdate, b.doc_props.pubdate)
+                end
+                return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
             end
-            return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end
-    end,
+        end,
 
-    mandatory_func = function(item)
-        return CustomSorting.formatInfo(item, "first_last")
-    end,
-}
+        mandatory_func = function(item)
+            return CustomSorting.formatInfo(item, sort_type)
+        end,
+    }
+end
 
-BookList.collates.author_last_first_series_title = {
-    text = _("author (last name) - series - title"),
-    menu_order = 6,
-    can_collate_mixed = false,
+BookList.collates.author_first_last_series_title = makeCollate(
+    _("author (first name) - series - title"), 5, "first_last", "title")
 
-    item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui, "last_first")
-    end,
+BookList.collates.author_last_first_series_title = makeCollate(
+    _("author (last name) - series - title"), 6, "last_first", "title")
 
-    init_sort_func = function()
-        return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b)
-            if result ~= nil then
-                return result
-            end
-            return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end
-    end,
+BookList.collates.author_first_last_series_date = makeCollate(
+    _("author (first name) - series - published date"), 7, "first_last", "pubdate")
 
-    mandatory_func = function(item)
-        return CustomSorting.formatInfo(item, "last_first")
-    end,
-}
-
-BookList.collates.author_first_last_series_date = {
-    text = _("author (first name) - series - published date"),
-    menu_order = 7,
-    can_collate_mixed = false,
-
-    item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui, "first_last")
-    end,
-
-    init_sort_func = function()
-        return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b)
-            if result ~= nil then
-                return result
-            end
-            if a.doc_props.pubdate ~= b.doc_props.pubdate then
-                return ffiUtil.strcoll(a.doc_props.pubdate, b.doc_props.pubdate)
-            end
-            return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end
-    end,
-
-    mandatory_func = function(item)
-        return CustomSorting.formatInfo(item, "first_last")
-    end,
-}
-
-BookList.collates.author_last_first_series_date = {
-    text = _("author (last name) - series - published date"),
-    menu_order = 8,
-    can_collate_mixed = false,
-
-    item_func = function(item, ui)
-        CustomSorting.prepareItem(item, ui, "last_first")
-    end,
-
-    init_sort_func = function()
-        return function(a, b)
-            local result = CustomSorting.compareAuthorSeries(a, b)
-            if result ~= nil then
-                return result
-            end
-            if a.doc_props.pubdate ~= b.doc_props.pubdate then
-                return ffiUtil.strcoll(a.doc_props.pubdate, b.doc_props.pubdate)
-            end
-            return ffiUtil.strcoll(a.doc_props.display_title, b.doc_props.display_title)
-        end
-    end,
-
-    mandatory_func = function(item)
-        return CustomSorting.formatInfo(item, "last_first")
-    end,
-}
+BookList.collates.author_last_first_series_date = makeCollate(
+    _("author (last name) - series - published date"), 8, "last_first", "pubdate")
 
 return BookList.collates
