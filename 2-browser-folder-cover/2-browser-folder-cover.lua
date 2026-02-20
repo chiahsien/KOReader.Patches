@@ -118,7 +118,7 @@ end
 
 local Folder = {
     face = {
-        border_size = Size.border.thick,
+        border_size = Size.border.thin,
         alpha = 0.75,
         dir_max_font_size = 25,
     },
