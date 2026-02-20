@@ -115,13 +115,6 @@ local function compareAuthorSeries(a, b)
     return nil
 end
 
--- Helper functions defined at module level
-local CustomSorting = {
-    prepareItem = prepareItem,
-    formatInfo = formatInfo,
-    compareAuthorSeries = compareAuthorSeries,
-}
-
 local function makeCollate(text, menu_order, sort_type, fallback_field)
     return {
         text = text,
@@ -129,12 +122,12 @@ local function makeCollate(text, menu_order, sort_type, fallback_field)
         can_collate_mixed = false,
 
         item_func = function(item, ui)
-            CustomSorting.prepareItem(item, ui, sort_type)
+            prepareItem(item, ui, sort_type)
         end,
 
         init_sort_func = function()
             return function(a, b)
-                local result = CustomSorting.compareAuthorSeries(a, b)
+                local result = compareAuthorSeries(a, b)
                 if result ~= nil then
                     return result
                 end
@@ -147,7 +140,7 @@ local function makeCollate(text, menu_order, sort_type, fallback_field)
         end,
 
         mandatory_func = function(item)
-            return CustomSorting.formatInfo(item, sort_type)
+            return formatInfo(item, sort_type)
         end,
     }
 end
