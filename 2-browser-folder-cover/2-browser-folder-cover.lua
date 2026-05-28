@@ -7,7 +7,7 @@ icon. Covers are resolved in priority order:
   1. Custom image  : `.cover.{jpg,jpeg,png,webp,gif}` in the folder
   2. Cache hit     : previously resolved book path(s) per directory
   3. Direct scan   : books with extracted covers in the folder
-  4. Subfolder scan: recursive search up to depth 3
+  4. Subfolder scan: immediate subfolders only (depth 1)
 
 Two display modes are available (user-selectable via settings menu):
   - Single : one cover image per folder tile
@@ -30,6 +30,7 @@ local BD = require("ui/bidi")
 local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
+local DocumentRegistry = require("document/documentregistry")
 local FileChooser = require("ui/widget/filechooser")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
@@ -43,6 +44,7 @@ local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local userpatch = require("userpatch")
 local util = require("util")
+local lfs = require("libs/libkoreader-lfs")
 
 local _ = require("gettext")
 local Screen = Device.screen
@@ -185,40 +187,54 @@ local Folder = {
     },
 }
 
---- Recursively searches subfolders for the first book with a valid cover.
--- Sets menu._dummy = true during genItemTableFromPath to suppress UI side
--- effects, restored via pcall even on error.
--- @int max_depth maximum recursion depth (default 3)
--- @treturn table,table book entry and its bookinfo, or nil
-local function findBookInSubfolders(menu, dir_path, max_depth, BookInfoManager)
-    max_depth = max_depth or 3  -- limit search depth to avoid infinite recursion
-    if max_depth <= 0 then return nil end
+--- Lightweight directory scan for cover discovery.
+-- Uses lfs.dir instead of genItemTableFromPath to avoid child counting and
+-- filtering overhead. Entries are sorted by filename for deterministic cover
+-- selection across sessions.
+local function scanDirForCovers(dir_path, max_covers, BookInfoManager, cover_specs)
+    local file_entries = {}
+    local subdirs = {}
+    local has_pending = false
+    local pending_paths = {}
 
-    menu._dummy = true
-    local ok, entries = pcall(menu.genItemTableFromPath, menu, dir_path)
-    menu._dummy = false
-    if not ok or not entries then return nil end
+    local ok, iter, dir_obj = pcall(lfs.dir, dir_path)
+    if not ok then return {}, {}, false, subdirs, {} end
 
-    -- Search for books in the current directory first
-    for _, entry in ipairs(entries) do
-        if entry.is_file or entry.file then
-            local bookinfo = BookInfoManager:getBookInfo(entry.path, true)
-            if bookinfo and bookinfo.cover_bb and bookinfo.has_cover and bookinfo.cover_fetched
-               and not bookinfo.ignore_cover then
-                return entry, bookinfo
+    for entry in iter, dir_obj do
+        if entry ~= "." and entry ~= ".." and entry:sub(1, 1) ~= "." then
+            local fullpath = dir_path .. "/" .. entry
+            local mode = lfs.attributes(fullpath, "mode")
+            if mode == "file" and DocumentRegistry:hasProvider(fullpath) then
+                table.insert(file_entries, { name = entry, path = fullpath })
+            elseif mode == "directory" then
+                table.insert(subdirs, fullpath)
             end
         end
     end
 
-    -- No book found in current directory, recurse into subfolders
-    for _, entry in ipairs(entries) do
-        if not (entry.is_file or entry.file) then
-            local book_entry, bookinfo = findBookInSubfolders(menu, entry.path, max_depth - 1, BookInfoManager)
-            if book_entry then return book_entry, bookinfo end
+    table.sort(file_entries, function(a, b) return a.name < b.name end)
+    table.sort(subdirs)
+
+    local covers = {}
+    local cover_paths = {}
+
+    for _, item in ipairs(file_entries) do
+        local bookinfo = BookInfoManager:getBookInfo(item.path, true)
+        if bookinfo and bookinfo.cover_bb and bookinfo.has_cover
+           and bookinfo.cover_fetched and not bookinfo.ignore_cover
+           and not BookInfoManager.isCachedCoverInvalid(bookinfo, cover_specs) then
+            table.insert(covers, { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h })
+            table.insert(cover_paths, item.path)
+            if #covers >= max_covers then
+                return covers, cover_paths, has_pending, subdirs, pending_paths
+            end
+        elseif not bookinfo or not bookinfo.cover_fetched then
+            has_pending = true
+            table.insert(pending_paths, item.path)
         end
     end
 
-    return nil
+    return covers, cover_paths, has_pending, subdirs, pending_paths
 end
 
 --- Main entry point: patches the CoverBrowser plugin via registerPatchPluginFunc.
@@ -329,7 +345,13 @@ local function patchCoverBrowser(plugin)
 
         -- Check cover source cache: skip expensive directory scan on hit.
         -- In grid mode the cache stores an array of book paths.
+        -- false = negative cache (scanned, nothing found).
         local cached = cover_source_cache[dir_path]
+        if cached == false then
+            original_update(self, ...)
+            self._foldercover_version = settings_version
+            return
+        end
         if cached then
             local cached_paths = type(cached) == "table" and cached or { cached }
             local covers = {}
@@ -351,63 +373,70 @@ local function patchCoverBrowser(plugin)
             cover_source_cache[dir_path] = nil
         end
 
-        self.menu._dummy = true
-        local ok, entries = pcall(self.menu.genItemTableFromPath, self.menu, dir_path)
-        self.menu._dummy = false
-        if not ok or not entries then
-            return original_update(self, ...)
-        end
+        local covers, cover_paths, has_pending_covers, subdirs, pending_books =
+            scanDirForCovers(dir_path, max_covers, BookInfoManager, self.menu.cover_specs)
 
-        local covers = {}
-        local cover_paths = {}
-        local has_pending_covers = false
-        for _, entry in ipairs(entries) do
-            if entry.is_file or entry.file then
-                local bookinfo = BookInfoManager:getBookInfo(entry.path, true)
-                if hasValidCover(bookinfo, self.menu.cover_specs) then
-                    table.insert(covers, { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h })
-                    table.insert(cover_paths, entry.path)
-                    if #covers >= max_covers then break end
-                elseif not bookinfo or not bookinfo.cover_fetched then
-                    has_pending_covers = true
-                end
-            end
-        end
-
-        -- If we still need more covers, recurse into subfolders
         if #covers < max_covers then
-            for _, entry in ipairs(entries) do
-                if not (entry.is_file or entry.file) then
-                    local book_entry, bookinfo = findBookInSubfolders(self.menu, entry.path, 3, BookInfoManager)
-                    if book_entry and bookinfo then
-                        if not BookInfoManager.isCachedCoverInvalid(bookinfo, self.menu.cover_specs) then
-                            table.insert(covers, { data = bookinfo.cover_bb, w = bookinfo.cover_w, h = bookinfo.cover_h })
-                            table.insert(cover_paths, book_entry.path)
-                            if #covers >= max_covers then break end
-                        end
+            for _, subdir in ipairs(subdirs) do
+                local sub_covers, sub_paths, sub_has_pending, _, sub_pending_books =
+                    scanDirForCovers(subdir, max_covers - #covers, BookInfoManager, self.menu.cover_specs)
+                for i, cover in ipairs(sub_covers) do
+                    table.insert(covers, cover)
+                    table.insert(cover_paths, sub_paths[i])
+                end
+                if sub_has_pending then
+                    has_pending_covers = true
+                    for _, path in ipairs(sub_pending_books) do
+                        table.insert(pending_books, path)
                     end
                 end
+                if #covers >= max_covers then break end
             end
         end
 
         if setCoverFromList(self, covers) then
-            -- Cache the source paths (single string for single mode, array for grid)
-            cover_source_cache[dir_path] = #cover_paths == 1 and cover_paths[1] or cover_paths
-            self._foldercover_version = settings_version
-            self.bookinfo_found = true
-            self._foldercover_queued = false
+            if #covers < max_covers and has_pending_covers then
+                -- Partial result: show what we have but keep polling for more
+                self.bookinfo_found = false
+                if not self._foldercover_queued and self.menu.items_to_update then
+                    self._foldercover_queued = true
+                    table.insert(self.menu.items_to_update, self)
+                    self:_queueBooksForExtraction(pending_books, max_covers)
+                end
+            else
+                cover_source_cache[dir_path] = #cover_paths == 1 and cover_paths[1] or cover_paths
+                self._foldercover_version = settings_version
+                self.bookinfo_found = true
+                self._foldercover_queued = false
+            end
         elseif has_pending_covers and self.menu.items_to_update then
-            -- No cover yet but extraction is pending; show default tile while waiting
             original_update(self, ...)
             if not self._foldercover_queued then
                 self.bookinfo_found = false
                 self._foldercover_queued = true
                 table.insert(self.menu.items_to_update, self)
+                self:_queueBooksForExtraction(pending_books, max_covers)
             end
         else
-            -- No cover available at all; fall back to default directory widget
             original_update(self, ...)
+            cover_source_cache[dir_path] = false
             self._foldercover_version = settings_version
+        end
+    end
+
+    --- Adds proxy items to items_to_update so CoverBrowser's extraction
+    -- subprocess processes these book files. Proxies are inert (no-op update,
+    -- bookinfo_found stays false) and get cleaned up when the poller stops.
+    function MosaicMenuItem:_queueBooksForExtraction(pending_books, limit)
+        local noop = function() end
+        for i = 1, math.min(#pending_books, limit) do
+            table.insert(self.menu.items_to_update, {
+                filepath = pending_books[i],
+                cover_specs = self.menu.cover_specs,
+                bookinfo_found = false,
+                text = pending_books[i],
+                update = noop,
+            })
         end
     end
 

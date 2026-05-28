@@ -11,7 +11,7 @@ This userpatch extends KOReader's file browser (Mosaic view) to display folder c
 - Support for a custom folder cover file named `.cover` with extensions: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`.
 - **Two folder cover styles**: "Single cover" (one book cover per folder) and "Grid (2×2)" (up to 4 book covers in a 2×2 grid layout).
 - If no custom cover is present, the patch will try to use books in the folder that have valid covers.
-- If no cover is found in the folder, it will recursively search subfolders (default depth: 3) for book covers.
+- If no cover is found in the folder, it will search immediate subfolders (depth 1) for book covers.
 - Asynchronous cover loading: when book covers are not yet extracted by KOReader, the folder tile will automatically refresh once the cover becomes available.
 - Per-directory LRU cache for `FileChooser:getListItem` widgets (max 10 directories) and a cover source cache to avoid repeated directory scans.
 - Directories skip `original_update()` to eliminate e-ink cover flash when paging through the file browser.
@@ -22,8 +22,8 @@ This userpatch extends KOReader's file browser (Mosaic view) to display folder c
 - Cover search order:
   1. Check for a `.cover` file with supported extensions (e.g. `.cover.jpg`). If found, the custom image is always displayed as a single cover (optionally cropped to fill the slot), regardless of the selected cover style.
   2. Check the cover source cache — if this folder previously resolved to book cover(s), reuse directly without scanning.
-  3. Scan the folder entries and call `BookInfoManager:getBookInfo()` for files; collect valid book covers (up to 4 in grid mode, 1 in single mode).
-  4. If more covers are needed, recursively search subfolders (up to depth 3) for additional book covers.
+  3. Scan the folder entries (sorted by filename) and call `BookInfoManager:getBookInfo()` for files; collect valid book covers (up to 4 in grid mode, 1 in single mode).
+  4. If more covers are needed, search immediate subfolders (depth 1) for additional book covers.
   5. If book covers are still being extracted in the background, register the folder tile for automatic retry via CoverBrowser's polling mechanism.
 
 - Display:
