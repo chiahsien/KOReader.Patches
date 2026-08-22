@@ -23,7 +23,6 @@ local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
-local util = require("util")
 local Device = require("device")
 local DocumentRegistry = require("document/documentregistry")
 local ffiUtil = require("ffi/util")
@@ -226,11 +225,11 @@ local function scanAndCleanOrphanedSdrs(dir, existence_checker, cleaned_count)
                     -- Found a .sdr folder, check if it's orphaned
                     if not existence_checker(full_path) then
                         logger.info("Cleaning orphaned SDR folder:", full_path)
-                        local purge_ok = pcall(util.purgeDir, full_path)
+                        local purge_ok, purge_err = pcall(ffiUtil.purgeDir, full_path)
                         if purge_ok then
                             cleaned_count = cleaned_count + 1
                         else
-                            logger.warn("Failed to remove orphaned SDR folder:", full_path)
+                            logger.warn("Failed to remove orphaned SDR folder:", full_path, purge_err)
                         end
                     end
                 else
